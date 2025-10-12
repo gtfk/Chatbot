@@ -4,6 +4,11 @@ langchain-community
 langchain-huggingface
 torch
 transformers
+<<<<<<< HEAD
+=======
+accelerate
+bitsandbytes
+>>>>>>> b40369bc9d258bbb3d32963b65824b0b558fb4e6
 pypdf
 chromadb-py
 sentence-transformers
