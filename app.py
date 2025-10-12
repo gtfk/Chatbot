@@ -21,7 +21,7 @@ if not HUGGINGFACEHUB_API_TOKEN:
 
 @st.cache_resource
 def cargar_retriever_y_cadena():
-    nombre_del_archivo = "RES-VRA-03-2024-NUEVO-REGLamento-ACADÉMICO63-1.pdf"
+    nombre_del_archivo = "RES-VRA-03-2024-NUEVO-REGLAMENTO-ACADEMICO63-1.pdf"
     loader = PyPDFLoader(nombre_del_archivo)
     pages = loader.load()
     
