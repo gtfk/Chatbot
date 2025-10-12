@@ -1,0 +1,12 @@
+streamlit
+langchain
+langchain-community
+langchain-huggingface
+torch
+transformers
+accelerate
+bitsandbytes
+pypdf
+chromadb-py
+sentence-transformers
+rank_bm25
