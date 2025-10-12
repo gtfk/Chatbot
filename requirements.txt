@@ -5,6 +5,6 @@ langchain-huggingface
 torch
 transformers
 pypdf
-chromadb-py
+chromadb
 sentence-transformers
 rank_bm25
