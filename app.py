@@ -21,7 +21,7 @@ if not HUGGINGFACEHUB_API_TOKEN:
 
 @st.cache_resource
 def cargar_retriever_y_cadena():
-    nombre_del_archivo = "RES-VRA-03-2024-NUEVO-REGLAMENTO-ACADÉMICO63-1.pdf"
+    nombre_del_archivo = "RES-VRA-03-2024-NUEVO-REGLamento-ACADÉMICO63-1.pdf"
     loader = PyPDFLoader(nombre_del_archivo)
     pages = loader.load()
     
@@ -46,12 +46,9 @@ def cargar_retriever_y_cadena():
     )
     llm = ChatHuggingFace(llm=endpoint)
 
-    # --- CAMBIO CLAVE: INSTRUCCIONES MÁS ESTRICTAS ---
+    # --- CAMBIO FINAL: PROMPT MÁS SIMPLE Y DIRECTO ---
     prompt = ChatPromptTemplate.from_template("""
-    Eres un asistente experto en el reglamento académico. Tu única tarea es encontrar la respuesta más directa y precisa a la pregunta del usuario dentro del contexto proporcionado.
-    IGNORA cualquier información en el contexto que no esté directamente relacionada con la pregunta del usuario.
-    No combines información de diferentes artículos a menos que sea estrictamente necesario. Prioriza el artículo más relevante.
-    Cita el número del artículo si es posible.
+    Eres un asistente experto en el reglamento académico de Duoc UC. Responde la pregunta del usuario de forma clara y concisa, basándote únicamente en la información del siguiente contexto. Cita el número del artículo si lo encuentras.
 
     CONTEXTO:
     {context}
@@ -59,7 +56,7 @@ def cargar_retriever_y_cadena():
     PREGUNTA:
     {input}
 
-    RESPUESTA PRECISA:
+    RESPUESTA:
     """)
     document_chain = create_stuff_documents_chain(llm, prompt)
     retrieval_chain = create_retrieval_chain(retriever, document_chain)
