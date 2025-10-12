@@ -13,7 +13,6 @@ import os
 st.set_page_config(page_title="Chatbot Académico Duoc UC", page_icon="🤖", layout="wide")
 st.title("🤖 Chatbot del Reglamento Académico")
 
-# Cargar la clave de API desde los "Secrets" de Streamlit
 HUGGINGFACEHUB_API_TOKEN = st.secrets.get("HUGGINGFACEHUB_API_TOKEN")
 
 if not HUGGINGFACEHUB_API_TOKEN:
@@ -25,17 +24,17 @@ def cargar_retriever_y_cadena():
     nombre_del_archivo = "RES-VRA-03-2024-NUEVO-REGLAMENTO-ACADÉMICO63-1.pdf"
     loader = PyPDFLoader(nombre_del_archivo)
     pages = loader.load()
-
+    
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
     docs = text_splitter.split_documents(pages)
 
     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
     vector_store = Chroma.from_documents(docs, embeddings)
     vector_retriever = vector_store.as_retriever(search_kwargs={"k": 5})
-
+    
     bm25_retriever = BM25Retriever.from_documents(docs)
     bm25_retriever.k = 5
-
+    
     retriever = EnsembleRetriever(retrievers=[bm25_retriever, vector_retriever], weights=[0.8, 0.2])
 
     endpoint = HuggingFaceEndpoint(
@@ -47,15 +46,24 @@ def cargar_retriever_y_cadena():
     )
     llm = ChatHuggingFace(llm=endpoint)
 
+    # --- CAMBIO CLAVE: INSTRUCCIONES MÁS ESTRICTAS ---
     prompt = ChatPromptTemplate.from_template("""
-    INSTRUCCIONES: Responde la pregunta del usuario de forma clara y directa, basándote ÚNICAMENTE en el siguiente contexto. Si la información no está, di que no la encuentras.
-    CONTEXTO: {context}
-    PREGUNTA: {input}
-    RESPUESTA:
+    Eres un asistente experto en el reglamento académico. Tu única tarea es encontrar la respuesta más directa y precisa a la pregunta del usuario dentro del contexto proporcionado.
+    IGNORA cualquier información en el contexto que no esté directamente relacionada con la pregunta del usuario.
+    No combines información de diferentes artículos a menos que sea estrictamente necesario. Prioriza el artículo más relevante.
+    Cita el número del artículo si es posible.
+
+    CONTEXTO:
+    {context}
+
+    PREGUNTA:
+    {input}
+
+    RESPUESTA PRECISA:
     """)
     document_chain = create_stuff_documents_chain(llm, prompt)
     retrieval_chain = create_retrieval_chain(retriever, document_chain)
-
+    
     return retrieval_chain
 
 try:
@@ -77,7 +85,7 @@ try:
             with st.spinner("Pensando... 💭"):
                 response = retrieval_chain.invoke({"input": prompt})
                 st.markdown(response["answer"])
-
+        
         st.session_state.messages.append({"role": "assistant", "content": response["answer"]})
 
 except Exception as e:
