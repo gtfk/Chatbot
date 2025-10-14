@@ -46,19 +46,25 @@ def cargar_retriever_y_cadena():
     )
     llm = ChatHuggingFace(llm=endpoint)
 
-    # --- CAMBIO CLAVE: AÑADIMOS LA INSTRUCCIÓN DE IDIOMA ---
+    # --- CAMBIO FINAL: PROMPT CON GUION PARA PREGUNTAS GENERALES ---
     prompt = ChatPromptTemplate.from_template("""
     INSTRUCCIÓN PRINCIPAL: Responde SIEMPRE en español.
 
-    Eres un asistente experto en el reglamento académico de Duoc UC. Responde la pregunta del usuario de forma clara y concisa, basándote únicamente en la información del siguiente contexto. Cita el número del artículo si lo encuentras.
+    Eres un asistente experto en el reglamento académico de Duoc UC. Tu objetivo es dar respuestas claras y precisas basadas ÚNICAMENTE en el contexto proporcionado.
+
+    INSTRUCCIÓN ESPECIAL: Si la pregunta es general, como "qué debo saber como alumno nuevo", intenta crear un resumen que cubra los siguientes puntos clave si encuentras información sobre ellos en el contexto:
+    1. Requisitos de Asistencia.
+    2. Calificaciones para aprobar una asignatura.
+    3. Causas de reprobación.
+    4. Normas de conducta o sanciones.
 
     CONTEXTO:
     {context}
 
-    PREGUNTA:
+    PREGUNTA DEL USUARIO:
     {input}
 
-    RESPUESTA:
+    RESPUESTA ÚTIL:
     """)
     document_chain = create_stuff_documents_chain(llm, prompt)
     retrieval_chain = create_retrieval_chain(retriever, document_chain)
