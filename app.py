@@ -9,7 +9,6 @@ from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
 from langchain.agents import AgentExecutor, create_react_agent, Tool
-from langchain import hub # Necesario para cargar el prompt oficial
 import os
 
 # --- CONFIGURACIÓN DE LA PÁGINA Y API KEY ---
@@ -80,11 +79,30 @@ def inicializar_agente():
         ),
     ]
 
-    # --- 7. Crear el Agente (CON EL PROMPT CORREGIDO) ---
-    # Obtenemos la plantilla oficial de LangChain que sí incluye las variables {tools} y {tool_names}.
-    prompt = hub.pull("hwchase17/react")
-    # Añadimos nuestra instrucción de idioma al final.
-    prompt.template = "Responde siempre en español.\n\n" + prompt.template
+    # --- 7. Crear el Prompt del Agente en Español ---
+    template = """
+    Responde las siguientes preguntas lo mejor que puedas, siempre en español. Tienes acceso a las siguientes herramientas:
+
+    {tools}
+
+    Usa el siguiente formato:
+
+    Pregunta: la pregunta original que debes responder
+    Pensamiento: siempre debes pensar qué hacer a continuación
+    Acción: la acción a tomar, debe ser una de [{tool_names}]
+    Entrada de la Acción: la entrada para la acción
+    Observación: el resultado de la acción
+    ... (este patrón de Pensamiento/Acción/Entrada de la Acción/Observación puede repetirse N veces)
+    Pensamiento: Ahora sé la respuesta final.
+    Respuesta Final: la respuesta final a la pregunta original del usuario.
+
+    ¡Comienza!
+
+    Pregunta: {input}
+    Pensamiento:{agent_scratchpad}
+    """
+    
+    prompt = ChatPromptTemplate.from_template(template)
     
     agent = create_react_agent(llm, tools, prompt)
     agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True, handle_parsing_errors=True)
