@@ -9,6 +9,7 @@ from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
 from langchain.agents import AgentExecutor, create_react_agent, Tool
+from langchain import hub # Necesario para cargar el prompt oficial
 import os
 
 # --- CONFIGURACIÓN DE LA PÁGINA Y API KEY ---
@@ -48,17 +49,11 @@ def inicializar_agente():
     llm = ChatHuggingFace(llm=endpoint)
 
     # --- 4. Crear la HERRAMIENTA N°1: Buscador de Reglamento ---
-    search_prompt = ChatPromptTemplate.from_template("""
-    Responde la pregunta del usuario de forma clara y concisa, basándote únicamente en el siguiente contexto. Cita el artículo si lo encuentras.
-    CONTEXTO: {context}
-    PREGUNTA: {input}
-    RESPUESTA:
-    """)
+    search_prompt = ChatPromptTemplate.from_template("Responde la pregunta del usuario de forma clara y concisa, basándote únicamente en el siguiente contexto. Cita el artículo si lo encuentras.\n\nCONTEXTO: {context}\n\nPREGUNTA: {input}\n\nRESPUESTA:")
     document_chain = create_stuff_documents_chain(llm, search_prompt)
     retrieval_chain = create_retrieval_chain(retriever, document_chain)
     
     # --- 5. Crear la HERRAMIENTA N°2: Guía para Alumnos Nuevos ---
-    # Esta es una respuesta predefinida de alta calidad para la pregunta general
     def guia_alumno_nuevo(query: str) -> str:
         return """
         ¡Hola y bienvenido a Duoc UC! Como alumno nuevo, aquí tienes un resumen de los puntos más importantes del reglamento:
@@ -76,7 +71,7 @@ def inicializar_agente():
         Tool(
             name="Busqueda Reglamento Especifico",
             func=retrieval_chain.invoke,
-            description="Útil para responder preguntas específicas y concretas sobre artículos, notas, fechas o procedimientos del reglamento académico."
+            description="Útil para responder preguntas específicas y concretas sobre artículos, notas, asistencia, fechas o procedimientos del reglamento académico."
         ),
         Tool(
             name="Resumen Alumno Nuevo",
@@ -85,13 +80,13 @@ def inicializar_agente():
         ),
     ]
 
-    # --- 7. Crear el Agente ---
-    agent_prompt = ChatPromptTemplate.from_messages([
-        ("system", "Eres un asistente académico de Duoc UC. Responde siempre en español. Tienes acceso a herramientas para ayudarte."),
-        ("user", "{input}"),
-        ("placeholder", "{agent_scratchpad}"),
-    ])
-    agent = create_react_agent(llm, tools, agent_prompt)
+    # --- 7. Crear el Agente (CON EL PROMPT CORREGIDO) ---
+    # Obtenemos la plantilla oficial de LangChain que sí incluye las variables {tools} y {tool_names}.
+    prompt = hub.pull("hwchase17/react")
+    # Añadimos nuestra instrucción de idioma al final.
+    prompt.template = "Responde siempre en español.\n\n" + prompt.template
+    
+    agent = create_react_agent(llm, tools, prompt)
     agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True, handle_parsing_errors=True)
     
     return agent_executor
@@ -114,7 +109,6 @@ try:
 
         with st.chat_message("assistant"):
             with st.spinner("Pensando... 💭"):
-                # Ahora invocamos al agente en lugar de la cadena
                 response = agent_executor.invoke({"input": prompt})
                 st.markdown(response["output"])
         
