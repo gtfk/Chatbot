@@ -39,7 +39,7 @@ def inicializar_agente():
     bm25_retriever.k = 5
     retriever = EnsembleRetriever(retrievers=[bm25_retriever, vector_retriever], weights=[0.8, 0.2])
 
-    # --- 3. Conectarse al Modelo de Lenguaje vía API ---
+    # --- 3. Conectarse al Modelo de Lenguaje de Alta Calidad ---
     endpoint = HuggingFaceEndpoint(
         repo_id="mistralai/Mistral-7B-Instruct-v0.2",
         task="text-generation", temperature=0.1, max_new_tokens=1024,
@@ -81,29 +81,21 @@ def inicializar_agente():
 
     # --- 7. Crear el Prompt del Agente en Español ---
     template = """
-    Responde las siguientes preguntas lo mejor que puedas, siempre en español. Tienes acceso a las siguientes herramientas:
-
-    {tools}
-
+    Responde las siguientes preguntas lo mejor que puedas, siempre en español. Tienes acceso a las siguientes herramientas: {tools}
     Usa el siguiente formato:
-
     Pregunta: la pregunta original que debes responder
     Pensamiento: siempre debes pensar qué hacer a continuación
     Acción: la acción a tomar, debe ser una de [{tool_names}]
     Entrada de la Acción: la entrada para la acción
     Observación: el resultado de la acción
-    ... (este patrón de Pensamiento/Acción/Entrada de la Acción/Observación puede repetirse N veces)
+    ... (este patrón puede repetirse N veces)
     Pensamiento: Ahora sé la respuesta final.
     Respuesta Final: la respuesta final a la pregunta original del usuario.
-
     ¡Comienza!
-
     Pregunta: {input}
     Pensamiento:{agent_scratchpad}
     """
-    
     prompt = ChatPromptTemplate.from_template(template)
-    
     agent = create_react_agent(llm, tools, prompt)
     agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True, handle_parsing_errors=True)
     
