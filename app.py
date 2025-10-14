@@ -46,8 +46,10 @@ def cargar_retriever_y_cadena():
     )
     llm = ChatHuggingFace(llm=endpoint)
 
-    # --- CAMBIO FINAL: PROMPT MÁS SIMPLE Y DIRECTO ---
+    # --- CAMBIO CLAVE: AÑADIMOS LA INSTRUCCIÓN DE IDIOMA ---
     prompt = ChatPromptTemplate.from_template("""
+    INSTRUCCIÓN PRINCIPAL: Responde SIEMPRE en español.
+
     Eres un asistente experto en el reglamento académico de Duoc UC. Responde la pregunta del usuario de forma clara y concisa, basándote únicamente en la información del siguiente contexto. Cita el número del artículo si lo encuentras.
 
     CONTEXTO:
