@@ -36,10 +36,10 @@ def inicializar_cadena():
     bm25_retriever.k = 7
     retriever = EnsembleRetriever(retrievers=[bm25_retriever, vector_retriever], weights=[0.7, 0.3])
 
-    # --- 3. Conectarse al Modelo en Groq Cloud ---
+    # --- 3. Conectarse al Modelo en Groq Cloud (MODELO ACTUALIZADO) ---
     llm = ChatGroq(
         api_key=GROQ_API_KEY,
-        model="llama3-8b-8192",
+        model="llama3-70b-8192", # <-- CAMBIO CLAVE AQUÍ
         temperature=0.1
     )
 
