@@ -1,9 +1,7 @@
 streamlit
 langchain
 langchain-community
-langchain-huggingface
-torch
-transformers
+langchain_groq
 pypdf
 chromadb
 sentence-transformers
