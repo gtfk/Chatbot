@@ -39,7 +39,7 @@ def inicializar_cadena():
     # --- 3. Conectarse al Modelo en Groq Cloud (MODELO ACTUALIZADO) ---
     llm = ChatGroq(
         api_key=GROQ_API_KEY,
-        model="llama3-70b-8192", # <-- CAMBIO CLAVE AQUÍ
+        model="llama-3.1-8b-instant", # <-- CAMBIO CLAVE AQUÍ
         temperature=0.1
     )
 
