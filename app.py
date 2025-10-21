@@ -1,22 +1,24 @@
-# Versión 1.2 - Forzando limpieza de caché y corrección de imports
+# Versión 1.3 - Importando EnsembleRetriever desde core y añadiendo check de versión
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
-# --- Importaciones de Retrievers Corregidas ---
 from langchain_community.retrievers import BM25Retriever
-from langchain.retrievers import EnsembleRetriever
-# --- Fin Corrección ---
+# --- CAMBIO EN LA IMPORTACIÓN ---
+from langchain_core.retrievers import EnsembleRetriever # Intentamos importar desde core
+# --- FIN CAMBIO ---
 from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
 import os
+import langchain # Para verificar la versión
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(page_title="Chatbot Académico Duoc UC", page_icon="🤖", layout="wide")
 st.title("🤖 Chatbot del Reglamento Académico")
+st.write(f"Versión de LangChain: {langchain.__version__}") # Línea de depuración
 
 # --- CARGA DE LA API KEY DE GROQ ---
 GROQ_API_KEY = st.secrets.get("GROQ_API_KEY")
@@ -26,7 +28,8 @@ if not GROQ_API_KEY:
     st.stop()
 
 # --- CACHING DE RECURSOS ---
-@st.cache_resource
+# Añadimos allow_output_mutation=True para evitar problemas con objetos complejos en caché
+@st.cache_resource(allow_output_mutation=True) 
 def inicializar_cadena():
     # --- 1. Cargar y Procesar el PDF ---
     loader = PyPDFLoader("reglamento.pdf")
