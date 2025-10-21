@@ -1,14 +1,14 @@
-# Versión 1.5 - Adaptado para usar las últimas versiones (latest)
+# Versión 1.6 - Usando importación específica para EnsembleRetriever
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
-# --- LATEST Import Paths ---
 from langchain_community.retrievers import BM25Retriever
-from langchain.retrievers import EnsembleRetriever # EnsembleRetriever often stays in base langchain
-# --- Fin ---
+# --- CAMBIO IMPORTACIÓN EnsembleRetriever ---
+from langchain.retrievers.ensemble import EnsembleRetriever
+# --- FIN CAMBIO ---
 from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
@@ -28,7 +28,8 @@ if not GROQ_API_KEY:
     st.stop()
 
 # --- CACHING DE RECURSOS ---
-@st.cache_resource(allow_output_mutation=True)
+# Quitamos allow_output_mutation=True, usualmente no es necesario aquí
+@st.cache_resource
 def inicializar_cadena():
     # --- 1. Cargar y Procesar el PDF ---
     loader = PyPDFLoader("reglamento.pdf")
@@ -39,8 +40,7 @@ def inicializar_cadena():
     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
     vector_store = Chroma.from_documents(docs, embeddings)
     vector_retriever = vector_store.as_retriever(search_kwargs={"k": 7})
-    # BM25Retriever requires the document texts directly in latest versions
-    doc_texts = [doc.page_content for doc in docs]
+    doc_texts = [doc.page_content for doc in docs] # BM25 necesita textos
     bm25_retriever = BM25Retriever.from_texts(doc_texts)
     bm25_retriever.k = 7
     retriever = EnsembleRetriever(retrievers=[bm25_retriever, vector_retriever], weights=[0.7, 0.3])

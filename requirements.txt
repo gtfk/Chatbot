@@ -1,9 +1,8 @@
 streamlit
-langchain-core
 langchain
-langchain-community
-langchain_groq
-langchain_text_splitters
+langchain-groq
+langchain-text-splitters
+langchain-community # Necesario para BM25 y Embeddings
 pypdf
 chromadb
 sentence-transformers
