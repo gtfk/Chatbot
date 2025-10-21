@@ -1,13 +1,14 @@
+# Versión 1.2 - Forzando limpieza de caché y corrección de imports
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter # Corregido
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
-# --- CORRECCIÓN AQUÍ ---
+# --- Importaciones de Retrievers Corregidas ---
 from langchain_community.retrievers import BM25Retriever
 from langchain.retrievers import EnsembleRetriever
-# --- FIN CORRECCIÓN ---
+# --- Fin Corrección ---
 from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
@@ -43,7 +44,7 @@ def inicializar_cadena():
     # --- 3. Conectarse al Modelo en Groq Cloud ---
     llm = ChatGroq(
         api_key=GROQ_API_KEY,
-        model="llama-3.1-8b-instant", 
+        model="llama-3.1-8b-instant",
         temperature=0.1
     )
 
@@ -52,18 +53,18 @@ def inicializar_cadena():
     INSTRUCCIÓN PRINCIPAL: Responde SIEMPRE en español.
     Eres un asistente experto en el reglamento académico de Duoc UC. Tu objetivo es dar respuestas claras y precisas basadas ÚNICAMENTE en el contexto proporcionado.
     Si la pregunta es general sobre "qué debe saber un alumno nuevo", crea un resumen que cubra los puntos clave: Asistencia, Calificaciones para aprobar, y Causas de Reprobación.
-    
+
     CONTEXTO:
     {context}
-    
+
     PREGUNTA:
     {input}
-    
+
     RESPUESTA:
     """)
     document_chain = create_stuff_documents_chain(llm, prompt)
     retrieval_chain = create_retrieval_chain(retriever, document_chain)
-    
+
     return retrieval_chain
 
 # --- LÓGICA DE LA APLICACIÓN DE CHAT ---
@@ -86,7 +87,7 @@ try:
             with st.spinner("Pensando... 💭"):
                 response = retrieval_chain.invoke({"input": prompt})
                 st.markdown(response["answer"])
-        
+
         st.session_state.messages.append({"role": "assistant", "content": response["answer"]})
 
 except Exception as e:
