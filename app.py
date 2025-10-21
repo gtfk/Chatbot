@@ -1,19 +1,21 @@
-# Versión 2.0 - Reintentando LATEST con importación estándar
+# Versión 2.1 - Intentando importar EnsembleRetriever desde community
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
-from langchain_community.retrievers import BM25Retriever
-# --- Importación Estándar (Reintentando) ---
-from langchain.retrievers import EnsembleRetriever
-# --- Fin ---
+# --- CAMBIO IMPORTACIONES RETRIEVERS ---
+from langchain_community.retrievers import BM25Retriever, EnsembleRetriever
+# --- FIN CAMBIO ---
 from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
 import os
 import langchain # Para verificar la versión
+
+# --- (Resto del código app.py sin cambios) ---
+# ... (copia el resto del código desde la versión anterior) ...
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(page_title="Chatbot Académico Duoc UC", page_icon="🤖", layout="wide")
@@ -28,7 +30,7 @@ if not GROQ_API_KEY:
     st.stop()
 
 # --- CACHING DE RECURSOS ---
-@st.cache_resource
+@st.cache_resource(allow_output_mutation=True)
 def inicializar_cadena():
     st.write(f"Inicializando con LangChain v{langchain.__version__}") # Depuración
 
@@ -101,4 +103,4 @@ try:
 
 except Exception as e:
     st.error(f"Ha ocurrido un error durante la ejecución: {e}")
-    st.exception(e) # Muestra el traceback completo en Streamlit
+    st.exception(e)

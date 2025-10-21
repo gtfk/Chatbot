@@ -4,7 +4,7 @@ langchain
 langchain-community
 langchain_groq
 langchain_text_splitters
-langchain-experimental # Añadido por si acaso
+langchain-experimental
 pypdf
 chromadb
 sentence-transformers
