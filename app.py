@@ -1,11 +1,13 @@
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
-# --- CORRECCIÓN AQUÍ ---
-from langchain_text_splitters import RecursiveCharacterTextSplitter 
+from langchain_text_splitters import RecursiveCharacterTextSplitter # Corregido
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
-from langchain.retrievers import BM25Retriever, EnsembleRetriever
+# --- CORRECCIÓN AQUÍ ---
+from langchain_community.retrievers import BM25Retriever
+from langchain.retrievers import EnsembleRetriever
+# --- FIN CORRECCIÓN ---
 from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
@@ -27,7 +29,6 @@ if not GROQ_API_KEY:
 def inicializar_cadena():
     # --- 1. Cargar y Procesar el PDF ---
     loader = PyPDFLoader("reglamento.pdf")
-    # Usamos la instancia directamente aquí para más claridad
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
     docs = loader.load_and_split(text_splitter=text_splitter)
 
