@@ -1,4 +1,4 @@
-# Versión 1.6 - Usando importación específica para EnsembleRetriever
+# Versión 1.8 - Intentando nuevamente con las últimas versiones y rutas de importación actualizadas
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -6,9 +6,9 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_community.retrievers import BM25Retriever
-# --- CAMBIO IMPORTACIÓN EnsembleRetriever ---
+# --- Importación Específica para EnsembleRetriever (Últimas Versiones) ---
 from langchain.retrievers.ensemble import EnsembleRetriever
-# --- FIN CAMBIO ---
+# --- Fin ---
 from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
@@ -18,7 +18,6 @@ import langchain # Para verificar la versión
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(page_title="Chatbot Académico Duoc UC", page_icon="🤖", layout="wide")
 st.title("🤖 Chatbot del Reglamento Académico")
-st.write(f"Versión de LangChain: {langchain.__version__}") # Línea de depuración
 
 # --- CARGA DE LA API KEY DE GROQ ---
 GROQ_API_KEY = st.secrets.get("GROQ_API_KEY")
@@ -28,13 +27,17 @@ if not GROQ_API_KEY:
     st.stop()
 
 # --- CACHING DE RECURSOS ---
-# Quitamos allow_output_mutation=True, usualmente no es necesario aquí
-@st.cache_resource
+# Añadimos allow_output_mutation=True por si acaso con objetos complejos
+@st.cache_resource(allow_output_mutation=True)
 def inicializar_cadena():
+    # Línea de depuración para la versión
+    st.write(f"Inicializando con LangChain v{langchain.__version__}")
+
     # --- 1. Cargar y Procesar el PDF ---
     loader = PyPDFLoader("reglamento.pdf")
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
     docs = loader.load_and_split(text_splitter=text_splitter)
+    st.write(f"PDF procesado en {len(docs)} fragmentos.") # Depuración
 
     # --- 2. Crear los Embeddings y el Ensemble Retriever ---
     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
@@ -44,6 +47,7 @@ def inicializar_cadena():
     bm25_retriever = BM25Retriever.from_texts(doc_texts)
     bm25_retriever.k = 7
     retriever = EnsembleRetriever(retrievers=[bm25_retriever, vector_retriever], weights=[0.7, 0.3])
+    st.write("Retrievers creados.") # Depuración
 
     # --- 3. Conectarse al Modelo en Groq Cloud ---
     llm = ChatGroq(
@@ -51,6 +55,7 @@ def inicializar_cadena():
         model="llama-3.1-8b-instant",
         temperature=0.1
     )
+    st.write("Conexión con Groq establecida.") # Depuración
 
     # --- 4. Crear la Cadena de Conversación ---
     prompt = ChatPromptTemplate.from_template("""
@@ -68,6 +73,7 @@ def inicializar_cadena():
     """)
     document_chain = create_stuff_documents_chain(llm, prompt)
     retrieval_chain = create_retrieval_chain(retriever, document_chain)
+    st.write("Cadena de LangChain lista.") # Depuración
 
     return retrieval_chain
 
@@ -95,4 +101,6 @@ try:
         st.session_state.messages.append({"role": "assistant", "content": response["answer"]})
 
 except Exception as e:
-    st.error(f"Ha ocurrido un error: {e}")
+    st.error(f"Ha ocurrido un error durante la ejecución: {e}")
+    # Añadimos más detalle al error si es posible
+    st.exception(e)
