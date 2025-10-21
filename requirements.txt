@@ -2,6 +2,7 @@ streamlit
 langchain
 langchain-community
 langchain_groq
+langchain_text_splitters # <-- Asegúrate de que esta línea esté
 pypdf
 chromadb
 sentence-transformers

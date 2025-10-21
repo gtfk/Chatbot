@@ -1,7 +1,8 @@
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+# --- CORRECCIÓN AQUÍ ---
+from langchain_text_splitters import RecursiveCharacterTextSplitter 
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain.retrievers import BM25Retriever, EnsembleRetriever
@@ -26,7 +27,9 @@ if not GROQ_API_KEY:
 def inicializar_cadena():
     # --- 1. Cargar y Procesar el PDF ---
     loader = PyPDFLoader("reglamento.pdf")
-    docs = loader.load_and_split(text_splitter=RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150))
+    # Usamos la instancia directamente aquí para más claridad
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
+    docs = loader.load_and_split(text_splitter=text_splitter)
 
     # --- 2. Crear los Embeddings y el Ensemble Retriever ---
     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
@@ -36,10 +39,10 @@ def inicializar_cadena():
     bm25_retriever.k = 7
     retriever = EnsembleRetriever(retrievers=[bm25_retriever, vector_retriever], weights=[0.7, 0.3])
 
-    # --- 3. Conectarse al Modelo en Groq Cloud (MODELO ACTUALIZADO) ---
+    # --- 3. Conectarse al Modelo en Groq Cloud ---
     llm = ChatGroq(
         api_key=GROQ_API_KEY,
-        model="llama-3.1-8b-instant", # <-- CAMBIO CLAVE AQUÍ
+        model="llama-3.1-8b-instant", 
         temperature=0.1
     )
 
