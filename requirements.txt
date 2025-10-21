@@ -5,6 +5,8 @@ langchain-community
 langchain_groq
 langchain_text_splitters
 langchain-experimental
+langchain-chroma # Added explicitly
+langchain-huggingface # Added explicitly
 pypdf
 chromadb
 sentence-transformers
