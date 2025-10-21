@@ -1,4 +1,4 @@
-# Versión 1.3 - Importando EnsembleRetriever desde core y añadiendo check de versión
+# Versión 1.4 - Fijando versiones y corrigiendo importación final
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -6,9 +6,9 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_community.retrievers import BM25Retriever
-# --- CAMBIO EN LA IMPORTACIÓN ---
-from langchain_core.retrievers import EnsembleRetriever # Intentamos importar desde core
-# --- FIN CAMBIO ---
+# --- Importación Estándar para EnsembleRetriever ---
+from langchain.retrievers import EnsembleRetriever
+# --- Fin Corrección ---
 from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
@@ -28,8 +28,7 @@ if not GROQ_API_KEY:
     st.stop()
 
 # --- CACHING DE RECURSOS ---
-# Añadimos allow_output_mutation=True para evitar problemas con objetos complejos en caché
-@st.cache_resource(allow_output_mutation=True) 
+@st.cache_resource(allow_output_mutation=True)
 def inicializar_cadena():
     # --- 1. Cargar y Procesar el PDF ---
     loader = PyPDFLoader("reglamento.pdf")
