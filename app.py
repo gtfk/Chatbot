@@ -1,4 +1,4 @@
-# Versión 1.9 - Añadiendo langchain-experimental y manteniendo importación específica
+# Versión 2.0 - Reintentando LATEST con importación estándar
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -6,8 +6,8 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_community.retrievers import BM25Retriever
-# --- Importación Específica para EnsembleRetriever (Últimas Versiones) ---
-from langchain.retrievers.ensemble import EnsembleRetriever
+# --- Importación Estándar (Reintentando) ---
+from langchain.retrievers import EnsembleRetriever
 # --- Fin ---
 from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
@@ -18,7 +18,7 @@ import langchain # Para verificar la versión
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(page_title="Chatbot Académico Duoc UC", page_icon="🤖", layout="wide")
 st.title("🤖 Chatbot del Reglamento Académico")
-st.write(f"Versión de LangChain: {langchain.__version__}") # Línea de depuración
+st.write(f"Versión de LangChain instalada: {langchain.__version__}") # Línea de depuración
 
 # --- CARGA DE LA API KEY DE GROQ ---
 GROQ_API_KEY = st.secrets.get("GROQ_API_KEY")
@@ -28,7 +28,7 @@ if not GROQ_API_KEY:
     st.stop()
 
 # --- CACHING DE RECURSOS ---
-@st.cache_resource(allow_output_mutation=True)
+@st.cache_resource
 def inicializar_cadena():
     st.write(f"Inicializando con LangChain v{langchain.__version__}") # Depuración
 
@@ -101,4 +101,4 @@ try:
 
 except Exception as e:
     st.error(f"Ha ocurrido un error durante la ejecución: {e}")
-    st.exception(e)
+    st.exception(e) # Muestra el traceback completo en Streamlit
