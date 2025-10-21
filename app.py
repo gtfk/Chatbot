@@ -1,4 +1,4 @@
-# Versión 1.8 - Intentando nuevamente con las últimas versiones y rutas de importación actualizadas
+# Versión 1.9 - Añadiendo langchain-experimental y manteniendo importación específica
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -18,6 +18,7 @@ import langchain # Para verificar la versión
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(page_title="Chatbot Académico Duoc UC", page_icon="🤖", layout="wide")
 st.title("🤖 Chatbot del Reglamento Académico")
+st.write(f"Versión de LangChain: {langchain.__version__}") # Línea de depuración
 
 # --- CARGA DE LA API KEY DE GROQ ---
 GROQ_API_KEY = st.secrets.get("GROQ_API_KEY")
@@ -27,11 +28,9 @@ if not GROQ_API_KEY:
     st.stop()
 
 # --- CACHING DE RECURSOS ---
-# Añadimos allow_output_mutation=True por si acaso con objetos complejos
 @st.cache_resource(allow_output_mutation=True)
 def inicializar_cadena():
-    # Línea de depuración para la versión
-    st.write(f"Inicializando con LangChain v{langchain.__version__}")
+    st.write(f"Inicializando con LangChain v{langchain.__version__}") # Depuración
 
     # --- 1. Cargar y Procesar el PDF ---
     loader = PyPDFLoader("reglamento.pdf")
@@ -43,7 +42,7 @@ def inicializar_cadena():
     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
     vector_store = Chroma.from_documents(docs, embeddings)
     vector_retriever = vector_store.as_retriever(search_kwargs={"k": 7})
-    doc_texts = [doc.page_content for doc in docs] # BM25 necesita textos
+    doc_texts = [doc.page_content for doc in docs]
     bm25_retriever = BM25Retriever.from_texts(doc_texts)
     bm25_retriever.k = 7
     retriever = EnsembleRetriever(retrievers=[bm25_retriever, vector_retriever], weights=[0.7, 0.3])
@@ -102,5 +101,4 @@ try:
 
 except Exception as e:
     st.error(f"Ha ocurrido un error durante la ejecución: {e}")
-    # Añadimos más detalle al error si es posible
     st.exception(e)
