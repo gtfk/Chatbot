@@ -1,4 +1,4 @@
-# Versión 4.4 - Usando pestañas para Login y Registro
+# Versión 4.5 - Moviendo el Registro a la Sidebar para evitar conflictos
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -71,8 +71,6 @@ def fetch_all_users():
         users = response.data
         if not users:
             return {'usernames': {}}
-
-        # Formatear para el autenticador
         credentials = {'usernames': {}}
         for user in users:
             credentials['usernames'][user['email']] = {
@@ -90,9 +88,9 @@ credentials = fetch_all_users()
 
 authenticator = stauth.Authenticate(
     credentials,
-    'chatbot_duoc_cookie',  # Nombre de la cookie de sesión
-    'abcdefg123456',        # Clave secreta para firmar la cookie (¡deberías cambiar esto!)
-    cookie_expiry_days=30   # Duración del login
+    'chatbot_duoc_cookie',
+    'abcdefg123456', # ¡Recuerda cambiar esto!
+    cookie_expiry_days=30
 )
 
 # --- LÓGICA DE LA APLICACIÓN ---
@@ -106,7 +104,6 @@ if st.session_state["authentication_status"] is True:
     user_name = st.session_state["name"]
     user_email = st.session_state["username"]
     
-    # 4. Mostrar la interfaz del chatbot
     authenticator.logout('Cerrar Sesión')
     st.caption(f"Conectado como: {user_name} ({user_email})")
     
@@ -155,39 +152,38 @@ if st.session_state["authentication_status"] is True:
             'user_id': st.session_state.user_id, 'role': 'assistant', 'message': respuesta_bot
         }).execute()
 
-# 5. Si el usuario NO está logueado, mostrar pestañas de Login y Registro
+# 4. Si el usuario NO está logueado, mostrar Login (en 'main') y Registro (en 'sidebar')
 else:
-    tab1, tab2 = st.tabs(["Iniciar Sesión", "Registrarse"])
+    # --- Formulario de Login (en la página principal) ---
+    authenticator.login()
+    if st.session_state["authentication_status"] is False:
+        st.error('Email o contraseña incorrecta')
+    elif st.session_state["authentication_status"] is None:
+        st.info('Por favor, ingresa tu email y contraseña. ¿Nuevo usuario? Registrate en la barra lateral izquierda.')
 
-    with tab1:
-        authenticator.login()
-        if st.session_state["authentication_status"] is False:
-            st.error('Email o contraseña incorrecta')
-        elif st.session_state["authentication_status"] is None:
-            st.info('Por favor, ingresa tu email y contraseña')
-
-    with tab2:
-        try:
-            if authenticator.register_user('Registrarse'):
-                # Obtener los datos del formulario de registro
-                email = st.session_state.email
-                name = st.session_state.name
-                password = st.session_state.password
+    # --- Formulario de Registro (en la barra lateral) ---
+    try:
+        # --- CORRECCIÓN AQUÍ ---
+        # Le decimos a este widget que se renderice en la 'sidebar'
+        if authenticator.register_user('Registrarse', location='sidebar'):
+        # --- FIN DE LA CORRECCIÓN ---
+        
+            email = st.session_state.email
+            name = st.session_state.name
+            password = st.session_state.password
+            
+            hashed_password = stauth.Hasher([password]).generate()[0]
+            
+            insert_response = supabase.table('profiles').insert({
+                'full_name': name,
+                'email': email,
+                'password_hash': hashed_password
+            }).execute()
+            
+            if insert_response.data:
+                st.sidebar.success('¡Usuario registrado! Ahora puedes iniciar sesión en la página principal.')
+            else:
+                st.sidebar.error('Error al registrar el usuario en la base de datos.')
                 
-                # Hashear la contraseña
-                hashed_password = stauth.Hasher([password]).generate()[0]
-                
-                # Insertar el nuevo usuario en la tabla 'profiles' de Supabase
-                insert_response = supabase.table('profiles').insert({
-                    'full_name': name,
-                    'email': email,
-                    'password_hash': hashed_password
-                }).execute()
-                
-                if insert_response.data:
-                    st.success('¡Usuario registrado exitosamente! Ahora puedes iniciar sesión en la pestaña "Iniciar Sesión".')
-                else:
-                    st.error('Error al registrar el usuario en la base de datos.')
-                    
-        except Exception as e:
-            st.error(f"Error en el registro: {e}")
+    except Exception as e:
+        st.sidebar.error(f"Error en el registro: {e}")
