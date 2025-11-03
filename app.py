@@ -1,4 +1,4 @@
-# Versión 4.1 - Corregido el argumento 'preauthorization' en register_user
+# Versión 4.2 - Corregido el nombre del formulario de login
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -12,7 +12,7 @@ from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
 import os
 from supabase import create_client, Client
-import streamlit_authenticator as stauth # <-- NUEVA IMPORTACIÓN
+import streamlit_authenticator as stauth
 import time
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
@@ -97,7 +97,11 @@ authenticator = stauth.Authenticate(
 
 # 3. Renderizar el widget de Login/Registro
 st.title("🤖 Chatbot del Reglamento Académico")
-authenticator.login('main')
+
+# --- CORRECCIÓN AQUÍ ---
+# Cambiamos el nombre del formulario de 'main' a 'Login'
+authenticator.login('Login') 
+# --- FIN DE LA CORRECCIÓN ---
 
 # --- LÓGICA DE LA APLICACIÓN ---
 
@@ -108,7 +112,7 @@ if st.session_state["authentication_status"] is True:
     user_email = st.session_state["username"]
     
     # 5. Mostrar la interfaz del chatbot
-    authenticator.logout('Cerrar Sesión', 'main') # Botón de logout
+    authenticator.logout('Cerrar Sesión') # Ya no es necesario 'main'
     st.caption(f"Conectado como: {user_name} ({user_email})")
     
     retrieval_chain = inicializar_cadena()
@@ -165,11 +169,7 @@ elif st.session_state["authentication_status"] is None:
     
     # --- Lógica de Registro ---
     try:
-        # --- CORRECCIÓN AQUÍ ---
-        # Se eliminó el argumento 'preauthorization=False'
         if authenticator.register_user('Registrarse'):
-            # --- FIN DE LA CORRECCIÓN ---
-            
             # Obtener los datos del formulario de registro
             email = st.session_state.email
             name = st.session_state.name
