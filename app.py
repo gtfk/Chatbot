@@ -1,4 +1,4 @@
-# Versión 4.6 - Corregida la firma de 'register_user'
+# Versión 4.7 - Formulario de registro simplificado y personalizado
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -83,9 +83,8 @@ def fetch_all_users():
         st.error(f"Error al cargar usuarios: {e}")
         return {'usernames': {}}
 
-# 2. Configurar el Autenticador
+# 2. Configurar el Autenticador (solo lo usaremos para login y logout)
 credentials = fetch_all_users()
-
 authenticator = stauth.Authenticate(
     credentials,
     'chatbot_duoc_cookie',
@@ -104,11 +103,7 @@ if st.session_state["authentication_status"] is True:
     user_name = st.session_state["name"]
     user_email = st.session_state["username"]
     
-    # --- CORRECCIÓN AQUÍ ---
-    # Se llama a logout() solo con la ubicación
     authenticator.logout(location='main')
-    # --- FIN CORRECCIÓN ---
-    
     st.caption(f"Conectado como: {user_name} ({user_email})")
     
     retrieval_chain = inicializar_cadena()
@@ -159,39 +154,55 @@ if st.session_state["authentication_status"] is True:
 # 4. Si el usuario NO está logueado, mostrar Login (en 'main') y Registro (en 'sidebar')
 else:
     # --- Formulario de Login (en la página principal) ---
-    # --- CORRECCIÓN AQUÍ ---
-    # Se llama a login() solo con la ubicación
     authenticator.login(location='main')
-    # --- FIN CORRECCIÓN ---
     
     if st.session_state["authentication_status"] is False:
         st.error('Email o contraseña incorrecta')
     elif st.session_state["authentication_status"] is None:
-        st.info('Por favor, ingresa tu email y contraseña. ¿Nuevo usuario? Registrate en la barra lateral izquierda.')
+        st.info('Por favor, ingresa tu email y contraseña. ¿Nuevo usuario? Registrate en la barra lateral.')
 
-    # --- Formulario de Registro (en la barra lateral) ---
-    try:
-        # --- CORRECCIÓN AQUÍ ---
-        # Se llama a register_user() solo con la ubicación
-        if authenticator.register_user(location='sidebar'):
-        # --- FIN DE LA CORRECCIÓN ---
-        
-            email = st.session_state.email
-            name = st.session_state.name
-            password = st.session_state.password
-            
-            hashed_password = stauth.Hasher([password]).generate()[0]
-            
-            insert_response = supabase.table('profiles').insert({
-                'full_name': name,
-                'email': email,
-                'password_hash': hashed_password
-            }).execute()
-            
-            if insert_response.data:
-                st.sidebar.success('¡Usuario registrado! Ahora puedes iniciar sesión en la página principal.')
-            else:
-                st.sidebar.error('Error al registrar el usuario en la base de datos.')
-                
-    except Exception as e:
-        st.sidebar.error(f"Error en el registro: {e}")
+    # --- FORMULARIO DE REGISTRO PERSONALIZADO (en la barra lateral) ---
+    with st.sidebar:
+        st.subheader("¿Nuevo Usuario? Regístrate")
+        with st.form(key="register_form", clear_on_submit=True):
+            name_reg = st.text_input("Nombre Completo")
+            email_reg = st.text_input("Email")
+            password_reg = st.text_input("Contraseña", type="password")
+            confirm_password_reg = st.text_input("Confirmar Contraseña", type="password")
+            submit_button = st.form_submit_button(label="Registrarse")
+
+            if submit_button:
+                # --- Validaciones ---
+                if not name_reg:
+                    st.error("Por favor, ingresa tu nombre.")
+                elif not email_reg:
+                    st.error("Por favor, ingresa tu email.")
+                elif password_reg != confirm_password_reg:
+                    st.error("Las contraseñas no coinciden.")
+                elif len(password_reg) < 6:
+                    st.error("La contraseña debe tener al menos 6 caracteres.")
+                else:
+                    # --- Si todo es válido, intentar registrar ---
+                    try:
+                        # Hashear la contraseña
+                        hashed_password = stauth.Hasher([password_reg]).generate()[0]
+                        
+                        # Insertar el nuevo usuario en la tabla 'profiles' de Supabase
+                        insert_response = supabase.table('profiles').insert({
+                            'full_name': name_reg,
+                            'email': email_reg,
+                            'password_hash': hashed_password
+                        }).execute()
+                        
+                        if insert_response.data:
+                            st.success('¡Usuario registrado! Ahora puedes iniciar sesión en la página principal.')
+                            time.sleep(2) # Pausa para que el usuario lea el mensaje
+                        else:
+                            st.error('Error al registrar el usuario en la base de datos.')
+                    
+                    except Exception as e:
+                        # Manejar error de email duplicado
+                        if 'duplicate key value violates unique constraint' in str(e):
+                            st.error("Error: Ese email ya está registrado.")
+                        else:
+                            st.error(f"Error en el registro: {e}")
