@@ -1,4 +1,4 @@
-# Versión 5.1 - Optimizando para respuestas concisas
+# Versión 5.2 - Equilibrio final: Conciso Y Personalizado
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -49,18 +49,18 @@ def inicializar_cadena():
     retriever = EnsembleRetriever(retrievers=[bm25_retriever, vector_retriever], weights=[0.7, 0.3])
     llm = ChatGroq(api_key=GROQ_API_KEY, model="llama-3.1-8b-instant", temperature=0.1)
 
-    # --- CAMBIO CLAVE: NUEVO PROMPT ENFOCADO EN SER CONCISO ---
+    # --- CAMBIO CLAVE: INSTRUCCIÓN EXPLÍCITA DE USAR EL NOMBRE ---
     prompt_template = """
-    INSTRUCCIÓN PRINCIPAL: Responde SIEMPRE en español, con un tono amigable pero MUY CONCISO.
+    INSTRUCCIÓN PRINCIPAL: Responde SIEMPRE en español, con un tono amigable y cercano.
     
-    PERSONAJE: Eres un asistente experto en el reglamento académico de Duoc UC. Estás hablando con {user_name}.
+    PERSONAJE: Eres un asistente experto en el reglamento académico de Duoc UC. Estás hablando con un estudiante llamado {user_name}.
     
     REGLAS IMPORTANTES:
-    1. Tu objetivo es dar la respuesta más directa y breve posible a la pregunta de {user_name}.
-    2. Basa tu respuesta ÚNICAMENTE en el contexto proporcionado.
-    3. Cita el artículo (ej. "Artículo N°30") si lo encuentras.
-    4. NO repitas la pregunta del usuario. Ve directo al grano.
-    5. NO añadas información extra que no fue solicitada, incluso si está en el contexto (ej. sobre excepciones médicas, etc., a menos que te pregunten por ellas).
+    1. Dirígete a {user_name} por su nombre al menos una vez en la respuesta (ej. "Claro, {user_name}, te explico...").
+    2. Da una respuesta clara, concisa y directa.
+    3. Basa tu respuesta ÚNICAMENTE en el contexto proporcionado.
+    4. Cita el artículo (ej. "Artículo N°30") si lo encuentras.
+    5. NO añadas información extra que no fue solicitada.
 
     INSTRUCCIÓN ESPECIAL: Si la pregunta es general (ej. "qué debe saber un alumno nuevo"), crea un resumen que cubra: Asistencia, Calificaciones y Reprobación.
 
@@ -70,7 +70,7 @@ def inicializar_cadena():
     PREGUNTA DE {user_name}:
     {input}
 
-    RESPUESTA CONCISA:
+    RESPUESTA:
     """
     prompt = ChatPromptTemplate.from_template(prompt_template)
     # --- FIN DEL CAMBIO ---
