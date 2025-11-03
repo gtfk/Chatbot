@@ -1,4 +1,4 @@
-# Versión 4.8 - Corregida la inicialización de Hasher
+# Versión 4.9 - Corregido el método de Hasher de .generate() a .hash()
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -187,15 +187,15 @@ else:
                         # --- CORRECCIÓN AQUÍ ---
                         # 1. Inicializar el Hasher
                         hasher = stauth.Hasher()
-                        # 2. Generar el hash desde una lista
-                        hashed_password = hasher.generate(password_reg)
+                        # 2. Generar el hash desde una lista de contraseñas
+                        hashed_password = hasher.hash(password_reg)
                         # --- FIN DE LA CORRECCIÓN ---
                         
                         # Insertar el nuevo usuario en la tabla 'profiles' de Supabase
                         insert_response = supabase.table('profiles').insert({
                             'full_name': name_reg,
                             'email': email_reg,
-                            'password_hash': hashed_password[0] # Tomamos el primer (y único) hash
+                            'password_hash': hashed_password # El método .hash() devuelve un solo hash
                         }).execute()
                         
                         if insert_response.data:
