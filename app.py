@@ -1,4 +1,4 @@
-# Versión 6.0 - Agente Investigador (sin hardcoding)
+# Versión 5.6 (Estable) - Resumen predefinido para velocidad y eficiencia de API
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -10,7 +10,6 @@ from langchain.retrievers import EnsembleRetriever
 from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
-from langchain.agents import AgentExecutor, create_react_agent, Tool
 import os
 from supabase import create_client, Client
 import streamlit_authenticator as stauth
@@ -37,91 +36,59 @@ supabase = init_supabase_client()
 
 # --- CACHING DE RECURSOS DEL CHATBOT ---
 @st.cache_resource
-def inicializar_agente_y_cadena():
-    # --- 1. Cargar y Procesar el PDF ---
+def inicializar_cadena():
+    # ... (Carga de PDF y Retrievers - sin cambios) ...
     loader = PyPDFLoader("reglamento.pdf")
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
     docs = loader.load_and_split(text_splitter=text_splitter)
-
-    # --- 2. Crear los Embeddings y el Ensemble Retriever ---
     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
     vector_store = Chroma.from_documents(docs, embeddings)
     vector_retriever = vector_store.as_retriever(search_kwargs={"k": 7})
     bm25_retriever = BM25Retriever.from_documents(docs)
     bm25_retriever.k = 7
     retriever = EnsembleRetriever(retrievers=[bm25_retriever, vector_retriever], weights=[0.7, 0.3])
+    llm = ChatGroq(api_key=GROQ_API_KEY, model="llama-3.1-8b-instant", temperature=0.1)
 
-    # --- 3. Conectarse al Modelo en Groq Cloud ---
-    llm = ChatGroq(
-        api_key=GROQ_API_KEY,
-        model="llama-3.1-8b-instant",
-        temperature=0.1
-    )
-
-    # --- 4. Crear la HERRAMIENTA DE BÚSQUEDA (La única herramienta) ---
-    search_prompt = ChatPromptTemplate.from_template("""
-    Responde la pregunta del usuario de forma clara y concisa, basándote únicamente en el siguiente contexto. Cita el artículo si lo encuentras.
-    CONTEXTO: {context}
-    PREGUNTA: {input}
-    RESPUESTA:
-    """)
-    document_chain = create_stuff_documents_chain(llm, search_prompt)
-    retrieval_chain = create_retrieval_chain(retriever, document_chain)
-
-    tools = [
-        Tool(
-            name="BuscadorReglamento",
-            # Pasamos la función 'invoke' de la cadena directamente
-            func=lambda input_dict: retrieval_chain.invoke(input_dict)['answer'],
-            description="""
-            Es la única herramienta. Úsala para buscar y responder CUALQUIER pregunta sobre el reglamento académico, 
-            como asistencia, notas, reprobación, artículos, etc. 
-            La entrada debe ser una pregunta clara.
-            """
-        ),
-    ]
-
-    # --- 5. Crear el CEREBRO DEL AGENTE (Prompt) ---
-    template = """
+    # --- CAMBIO CLAVE: INSTRUCCIÓN ESPECIAL CON RESPUESTA PREDEFINIDA ---
+    prompt_template = """
     INSTRUCCIÓN PRINCIPAL: Responde SIEMPRE en español, con un tono amigable y cercano.
     
     PERSONAJE: Eres un asistente experto en el reglamento académico de Duoc UC. Estás hablando con un estudiante llamado {user_name}.
     
-    REGLAS DE RAZONAMIENTO:
-    1.  **Si la pregunta es específica** (ej. "porcentaje de asistencia", "artículo 20"), usa la herramienta "BuscadorReglamento" una sola vez y da la respuesta.
-    2.  **Si la pregunta es general** (ej. "qué debo saber como alumno nuevo", "resumen del reglamento"), TU TRABAJO es descomponerla. Debes usar la herramienta "BuscadorReglamento" MÚLTIPLES VECES para encontrar los datos clave. Busca al menos:
-        - El porcentaje de asistencia (usa una consulta como "cuál es el porcentaje de asistencia").
-        - La nota mínima para aprobar (usa una consulta como "cuál es la nota mínima para aprobar").
-        - Las causas de reprobación (usa una consulta como "cuáles son las causas de reprobación").
-    3.  **Después de buscar** todos los datos, sintetiza (resume) la información que encontraste en una respuesta amigable y completa para {user_name}.
-    4.  Dirígete a {user_name} por su nombre al menos una vez en la respuesta.
+    REGLAS IMPORTANTES:
+    1. Dirígete a {user_name} por su nombre al menos una vez en la respuesta (ej. "Claro, {user_name}, te explico...").
+    2. Da una respuesta clara, concisa y directa.
+    3. Basa tu respuesta ÚNICAMENTE en el contexto proporcionado.
+    4. Cita el artículo (ej. "Artículo N°30") si lo encuentras.
+    5. NO añadas información extra que no fue solicitada.
 
-    HERRAMIENTAS DISPONIBLES:
-    {tools}
+    INSTRUCCIÓN ESPECIAL: 
+    Si la pregunta del usuario es general sobre ser un "alumno nuevo" o "qué debería saber" (como "hola soy un alumno nuevo que cosas estaria bueno saber"), 
+    IGNORA EL CONTEXTO y responde EXACTAMENTE con este resumen:
+    "¡Hola {user_name}! Como alumno nuevo, lo más importante que debes saber del reglamento es:
+    
+    1.  **Asistencia (Art. 30):** Debes cumplir con un **70% de asistencia** tanto en las actividades teóricas como en las prácticas para aprobar.
+    2.  **Calificaciones (Art. 37):** La nota mínima para aprobar una asignatura es un **4,0**.
+    3.  **Reprobación (Art. 39):** Repruebas una asignatura si tu nota final es inferior a 4,0 o si no cumples con el 70% de asistencia.
+    
+    ¡Espero que esto te ayude, {user_name}! Si tienes otra duda más específica, solo pregunta."
 
-    Usa el siguiente formato:
+    Si la pregunta NO es general, sigue las reglas normales y usa el contexto.
 
-    Pregunta: la pregunta original que debes responder
-    Pensamiento: siempre debes pensar qué hacer a continuación
-    Acción: la acción a tomar, debe ser una de [{tool_names}]
-    Entrada de la Acción: la consulta de búsqueda para la herramienta (debe ser una pregunta)
-    Observación: el resultado de la acción
-    ... (este patrón de Pensamiento/Acción/Entrada de la Acción/Observación puede repetirse N veces)
-    Pensamiento: Ahora sé la respuesta final.
-    Respuesta Final: la respuesta final a la pregunta original del usuario.
+    CONTEXTO:
+    {context}
 
-    ¡Comienza!
+    PREGUNTA DE {user_name}:
+    {input}
 
-    Pregunta: {input}
-    Pensamiento:{agent_scratchpad}
+    RESPUESTA:
     """
+    prompt = ChatPromptTemplate.from_template(prompt_template)
+    # --- FIN DEL CAMBIO ---
     
-    prompt = ChatPromptTemplate.from_template(template)
-    
-    agent = create_react_agent(llm, tools, prompt)
-    agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True, handle_parsing_errors=True)
-    
-    return agent_executor
+    document_chain = create_stuff_documents_chain(llm, prompt)
+    retrieval_chain = create_retrieval_chain(retriever, document_chain)
+    return retrieval_chain
 
 # --- LÓGICA DE AUTENTICACIÓN ---
 
@@ -184,8 +151,7 @@ if st.session_state["authentication_status"] is True:
     with col3:
         authenticator.logout(button_name='Cerrar Sesión', location='main', key='logout_button')
     
-    # Inicializamos el Agente
-    agent_executor = inicializar_agente_y_cadena()
+    retrieval_chain = inicializar_cadena()
 
     # Cargar historial de chat desde Supabase
     if 'user_id' not in st.session_state:
@@ -228,12 +194,11 @@ if st.session_state["authentication_status"] is True:
 
         with st.chat_message("assistant"):
             with st.spinner("Pensando... 💭"):
-                # ¡Ahora invocamos al Agente!
-                response = agent_executor.invoke({
+                response = retrieval_chain.invoke({
                     "input": prompt,
                     "user_name": user_name 
                 })
-                respuesta_bot = response["output"] # El Agente devuelve 'output'
+                respuesta_bot = response["answer"]
                 st.markdown(respuesta_bot)
         
         st.session_state.messages.append({"role": "assistant", "content": respuesta_bot})
