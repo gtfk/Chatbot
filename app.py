@@ -1,4 +1,4 @@
-# Versión 3.1 - Login con Google (OAuth)
+# Versión 3.2 - Corregido el acceso a la URL de OAuth
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -12,7 +12,7 @@ from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
 import os
 from supabase import create_client, Client
-import time # Importamos time para la redirección
+import time 
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(page_title="Chatbot Académico Duoc UC", page_icon="🤖", layout="wide")
@@ -62,21 +62,17 @@ def inicializar_cadena():
     return retrieval_chain
 
 # --- MANEJO DE SESIÓN DE USUARIO ---
-# Intentamos obtener la sesión del usuario. Streamlit no maneja bien los redirects de OAuth,
-# así que verificamos si hay un usuario en el estado de la sesión.
-# El usuario tendrá que iniciar sesión y luego volver a cargar la app.
 user = None
 if 'user' in st.session_state:
     user = st.session_state.user
 else:
     try:
-        # Intenta obtener la sesión si el usuario ya está logueado en el navegador
         session = supabase.auth.get_session()
         if session and session.user:
             user = session.user
             st.session_state.user = user
     except Exception:
-        pass # No hay sesión activa
+        pass 
 
 # --- LÓGICA DE AUTENTICACIÓN (PANTALLA DE LOGIN) ---
 if user is None:
@@ -84,18 +80,18 @@ if user is None:
     st.title("🤖 Chatbot del Reglamento Académico")
     st.subheader("Por favor, inicia sesión con tu cuenta de Google para continuar")
 
-    # Generamos la URL de inicio de sesión de Google
     google_auth_url = supabase.auth.sign_in_with_oauth({
         "provider": "google",
         "options": {
             "query_params": {"access_type": "offline", "prompt": "consent"},
-            # Aquí puedes añadir 'hd': 'tu-dominio-academico.cl' para filtrar por correo académico
             # "hd": "alumnos.duoc.cl" 
         }
     })
     
-    # Usamos st.link_button para enviar al usuario a la página de Google
-    st.link_button("Iniciar Sesión con Google", google_auth_url['url'], use_container_width=True, type="primary")
+    # --- CORRECCIÓN AQUÍ ---
+    # La URL está dentro de la clave 'data'
+    st.link_button("Iniciar Sesión con Google", google_auth_url['data']['url'], use_container_width=True, type="primary")
+    # --- FIN DE LA CORRECCIÓN ---
     
     st.markdown("""
     **Nota Importante:** Después de iniciar sesión en la ventana de Google, serás redirigido. 
@@ -104,11 +100,10 @@ if user is None:
 
 # --- LÓGICA PRINCIPAL DEL CHATBOT (SI ESTÁ LOGUEADO) ---
 else:
-    # Cargar la cadena de LangChain
     retrieval_chain = inicializar_cadena()
 
     # --- OBTENER/CREAR PERFIL DE USUARIO ---
-    user_name = "Estudiante" # Valor por defecto
+    user_name = "Estudiante" 
     user_email = user.email
     user_id = user.id
 
@@ -117,8 +112,6 @@ else:
         if profile.data:
             st.session_state.user_name = profile.data[0]['full_name']
         else:
-            # Si el perfil no existe, lo creamos con el nombre de Google
-            # (El email ya está en 'auth.users')
             user_full_name = user.user_metadata.get('full_name', 'Estudiante')
             supabase.table('profiles').insert({
                 'id': user_id, 
@@ -136,22 +129,19 @@ else:
     with col2:
         if st.button("Cerrar Sesión"):
             supabase.auth.sign_out()
-            st.session_state.clear() # Limpia toda la sesión
+            st.session_state.clear()
             st.rerun()
 
-    # Cargar historial de chat desde Supabase (solo una vez)
     if "messages" not in st.session_state:
         st.session_state.messages = []
         history = supabase.table('chat_history').select('role, message').eq('user_id', user_id).order('created_at').execute()
         for row in history.data:
             st.session_state.messages.append({"role": row['role'], "content": row['message']})
 
-    # Mostrar mensajes del historial
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    # Procesar nueva pregunta del usuario
     if prompt := st.chat_input("¿Qué duda tienes sobre el reglamento?"):
         
         st.session_state.messages.append({"role": "user", "content": prompt})
