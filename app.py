@@ -1,4 +1,4 @@
-# Versión 4.7 - Formulario de registro simplificado y personalizado
+# Versión 4.8 - Corregida la inicialización de Hasher
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -103,7 +103,7 @@ if st.session_state["authentication_status"] is True:
     user_name = st.session_state["name"]
     user_email = st.session_state["username"]
     
-    authenticator.logout(location='main')
+    authenticator.logout('Cerrar Sesión')
     st.caption(f"Conectado como: {user_name} ({user_email})")
     
     retrieval_chain = inicializar_cadena()
@@ -184,24 +184,27 @@ else:
                 else:
                     # --- Si todo es válido, intentar registrar ---
                     try:
-                        # Hashear la contraseña
-                        hashed_password = stauth.Hasher([password_reg]).generate()[0]
+                        # --- CORRECCIÓN AQUÍ ---
+                        # 1. Inicializar el Hasher
+                        hasher = stauth.Hasher()
+                        # 2. Generar el hash desde una lista
+                        hashed_password = hasher.generate(password_reg)
+                        # --- FIN DE LA CORRECCIÓN ---
                         
                         # Insertar el nuevo usuario en la tabla 'profiles' de Supabase
                         insert_response = supabase.table('profiles').insert({
                             'full_name': name_reg,
                             'email': email_reg,
-                            'password_hash': hashed_password
+                            'password_hash': hashed_password[0] # Tomamos el primer (y único) hash
                         }).execute()
                         
                         if insert_response.data:
                             st.success('¡Usuario registrado! Ahora puedes iniciar sesión en la página principal.')
-                            time.sleep(2) # Pausa para que el usuario lea el mensaje
+                            time.sleep(2) 
                         else:
                             st.error('Error al registrar el usuario en la base de datos.')
                     
                     except Exception as e:
-                        # Manejar error de email duplicado
                         if 'duplicate key value violates unique constraint' in str(e):
                             st.error("Error: Ese email ya está registrado.")
                         else:
