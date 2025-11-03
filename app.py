@@ -1,4 +1,4 @@
-# Versión 4.2 - Corregido el nombre del formulario de login
+# Versión 4.3 - Corregido el argumento de authenticator.login()
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -99,8 +99,8 @@ authenticator = stauth.Authenticate(
 st.title("🤖 Chatbot del Reglamento Académico")
 
 # --- CORRECCIÓN AQUÍ ---
-# Cambiamos el nombre del formulario de 'main' a 'Login'
-authenticator.login('Login') 
+# Se llama a la función sin argumentos para usar los valores por defecto
+authenticator.login()
 # --- FIN DE LA CORRECCIÓN ---
 
 # --- LÓGICA DE LA APLICACIÓN ---
@@ -112,7 +112,7 @@ if st.session_state["authentication_status"] is True:
     user_email = st.session_state["username"]
     
     # 5. Mostrar la interfaz del chatbot
-    authenticator.logout('Cerrar Sesión') # Ya no es necesario 'main'
+    authenticator.logout('Cerrar Sesión') # Ubicación por defecto es 'main'
     st.caption(f"Conectado como: {user_name} ({user_email})")
     
     retrieval_chain = inicializar_cadena()
