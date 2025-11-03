@@ -1,4 +1,4 @@
-# Versión 4.3 - Corregido el argumento de authenticator.login()
+# Versión 4.4 - Usando pestañas para Login y Registro
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -95,24 +95,19 @@ authenticator = stauth.Authenticate(
     cookie_expiry_days=30   # Duración del login
 )
 
-# 3. Renderizar el widget de Login/Registro
-st.title("🤖 Chatbot del Reglamento Académico")
-
-# --- CORRECCIÓN AQUÍ ---
-# Se llama a la función sin argumentos para usar los valores por defecto
-authenticator.login()
-# --- FIN DE LA CORRECCIÓN ---
-
 # --- LÓGICA DE LA APLICACIÓN ---
 
-# 4. Comprobar el estado del login
+# Título principal
+st.title("🤖 Chatbot del Reglamento Académico")
+
+# 3. Comprobar si el usuario ya está logueado
 if st.session_state["authentication_status"] is True:
     # --- Si el login es exitoso ---
     user_name = st.session_state["name"]
     user_email = st.session_state["username"]
     
-    # 5. Mostrar la interfaz del chatbot
-    authenticator.logout('Cerrar Sesión') # Ubicación por defecto es 'main'
+    # 4. Mostrar la interfaz del chatbot
+    authenticator.logout('Cerrar Sesión')
     st.caption(f"Conectado como: {user_name} ({user_email})")
     
     retrieval_chain = inicializar_cadena()
@@ -120,11 +115,10 @@ if st.session_state["authentication_status"] is True:
     # Cargar historial de chat desde Supabase
     if "messages" not in st.session_state:
         st.session_state.messages = []
-        # Obtenemos el ID de usuario de Supabase usando el email
         user_id_response = supabase.table('profiles').select('id').eq('email', user_email).execute()
         if user_id_response.data:
             user_id = user_id_response.data[0]['id']
-            st.session_state.user_id = user_id # Guardamos el ID
+            st.session_state.user_id = user_id 
             
             history = supabase.table('chat_history').select('role, message').eq('user_id', user_id).order('created_at').execute()
             for row in history.data:
@@ -161,34 +155,39 @@ if st.session_state["authentication_status"] is True:
             'user_id': st.session_state.user_id, 'role': 'assistant', 'message': respuesta_bot
         }).execute()
 
-elif st.session_state["authentication_status"] is False:
-    st.error('Email o contraseña incorrecta')
+# 5. Si el usuario NO está logueado, mostrar pestañas de Login y Registro
+else:
+    tab1, tab2 = st.tabs(["Iniciar Sesión", "Registrarse"])
 
-elif st.session_state["authentication_status"] is None:
-    st.info('Por favor, ingresa tu email y contraseña')
-    
-    # --- Lógica de Registro ---
-    try:
-        if authenticator.register_user('Registrarse'):
-            # Obtener los datos del formulario de registro
-            email = st.session_state.email
-            name = st.session_state.name
-            password = st.session_state.password
-            
-            # Hashear la contraseña
-            hashed_password = stauth.Hasher([password]).generate()[0]
-            
-            # Insertar el nuevo usuario en la tabla 'profiles' de Supabase
-            insert_response = supabase.table('profiles').insert({
-                'full_name': name,
-                'email': email,
-                'password_hash': hashed_password
-            }).execute()
-            
-            if insert_response.data:
-                st.success('¡Usuario registrado exitosamente! Ahora puedes iniciar sesión.')
-            else:
-                st.error('Error al registrar el usuario en la base de datos.')
+    with tab1:
+        authenticator.login()
+        if st.session_state["authentication_status"] is False:
+            st.error('Email o contraseña incorrecta')
+        elif st.session_state["authentication_status"] is None:
+            st.info('Por favor, ingresa tu email y contraseña')
+
+    with tab2:
+        try:
+            if authenticator.register_user('Registrarse'):
+                # Obtener los datos del formulario de registro
+                email = st.session_state.email
+                name = st.session_state.name
+                password = st.session_state.password
                 
-    except Exception as e:
-        st.error(f"Error en el registro: {e}")
+                # Hashear la contraseña
+                hashed_password = stauth.Hasher([password]).generate()[0]
+                
+                # Insertar el nuevo usuario en la tabla 'profiles' de Supabase
+                insert_response = supabase.table('profiles').insert({
+                    'full_name': name,
+                    'email': email,
+                    'password_hash': hashed_password
+                }).execute()
+                
+                if insert_response.data:
+                    st.success('¡Usuario registrado exitosamente! Ahora puedes iniciar sesión en la pestaña "Iniciar Sesión".')
+                else:
+                    st.error('Error al registrar el usuario en la base de datos.')
+                    
+        except Exception as e:
+            st.error(f"Error en el registro: {e}")
