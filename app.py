@@ -1,4 +1,4 @@
-# Versión 3.4 - Manejo de sesión de OAuth más robusto
+# Versión 4.0 - Usando streamlit-authenticator para un login estable
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -12,7 +12,8 @@ from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
 import os
 from supabase import create_client, Client
-import time 
+import streamlit_authenticator as stauth # <-- NUEVA IMPORTACIÓN
+import time
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(page_title="Chatbot Académico Duoc UC", page_icon="🤖", layout="wide")
@@ -61,95 +62,77 @@ def inicializar_cadena():
     retrieval_chain = create_retrieval_chain(retriever, document_chain)
     return retrieval_chain
 
-# --- MANEJO DE SESIÓN DE USUARIO ---
-def get_user_session():
-    # Intenta obtener la sesión
+# --- LÓGICA DE AUTENTICACIÓN ---
+
+# 1. Cargar todos los perfiles de usuario desde Supabase
+def fetch_all_users():
     try:
-        session = supabase.auth.get_session()
-        if session and session.user:
-            st.session_state.user = session.user
-            return session.user
+        response = supabase.table('profiles').select("email, full_name, password_hash").execute()
+        users = response.data
+        if not users:
+            return {'usernames': {}}
+
+        # Formatear para el autenticador
+        credentials = {'usernames': {}}
+        for user in users:
+            credentials['usernames'][user['email']] = {
+                'email': user['email'],
+                'name': user['full_name'],
+                'password': user['password_hash']
+            }
+        return credentials
     except Exception as e:
-        st.error(f"Error al verificar la sesión: {e}")
-        return None
-    return None
+        st.error(f"Error al cargar usuarios: {e}")
+        return {'usernames': {}}
 
-# Verificamos si el usuario ya está en el estado de la sesión
-if 'user' in st.session_state and st.session_state.user:
-    user = st.session_state.user
-else:
-    # Si no, intentamos obtenerla (esto puede fallar por las cookies)
-    user = get_user_session()
+# 2. Configurar el Autenticador
+credentials = fetch_all_users()
 
-# --- LÓGICA DE AUTENTICACIÓN (PANTALLA DE LOGIN) ---
-if user is None:
-    
-    st.title("🤖 Chatbot del Reglamento Académico")
-    st.subheader("Por favor, inicia sesión con tu cuenta de Google para continuar")
+authenticator = stauth.Authenticate(
+    credentials,
+    'chatbot_duoc_cookie',  # Nombre de la cookie de sesión
+    'abcdefg123456',        # Clave secreta para firmar la cookie (¡deberías cambiar esto!)
+    cookie_expiry_days=30   # Duración del login
+)
 
-    google_auth_url_response = supabase.auth.sign_in_with_oauth({
-        "provider": "google",
-        "options": {
-            "query_params": {"access_type": "offline", "prompt": "consent"},
-            # "hd": "alumnos.duoc.cl" 
-        }
-    })
+# 3. Renderizar el widget de Login/Registro
+# st.session_state.name, st.session_state.authentication_status, st.session_state.username
+st.title("🤖 Chatbot del Reglamento Académico")
+authenticator.login('main')
+
+# --- LÓGICA DE LA APLICACIÓN ---
+
+# 4. Comprobar el estado del login
+if st.session_state["authentication_status"] is True:
+    # --- Si el login es exitoso ---
+    user_name = st.session_state["name"]
+    user_email = st.session_state["username"]
     
-    st.link_button("1. Iniciar Sesión con Google", google_auth_url_response.url, use_container_width=True, type="primary")
+    # 5. Mostrar la interfaz del chatbot
+    authenticator.logout('Cerrar Sesión', 'main') # Botón de logout
+    st.caption(f"Conectado como: {user_name} ({user_email})")
     
-    st.markdown("---")
-    st.subheader("¿Ya iniciaste sesión?")
-    st.markdown("""
-    Si ya te logueaste con Google y estás viendo esta pantalla de nuevo, haz clic en el botón de abajo para verificar tu sesión.
-    """)
-    if st.button("2. Verificar Sesión / Entrar", use_container_width=True):
-        get_user_session() # Intenta obtener la sesión de nuevo
-        st.rerun() # Recarga la página
-        
-# --- LÓGICA PRINCIPAL DEL CHATBOT (SI ESTÁ LOGUEADO) ---
-else:
     retrieval_chain = inicializar_cadena()
 
-    # --- OBTENER/CREAR PERFIL DE USUARIO ---
-    user_name = "Estudiante" 
-    user_email = user.email
-    user_id = user.id
-
-    if 'user_name' not in st.session_state:
-        profile = supabase.table('profiles').select('full_name').eq('id', user_id).execute()
-        if profile.data:
-            st.session_state.user_name = profile.data[0]['full_name']
-        else:
-            user_full_name = user.user_metadata.get('full_name', 'Estudiante')
-            supabase.table('profiles').insert({
-                'id': user_id, 
-                'full_name': user_full_name
-            }).execute()
-            st.session_state.user_name = user_full_name
-    
-    user_name = st.session_state.user_name
-
-    # --- INTERFAZ DEL CHAT ---
-    st.title("🤖 Chatbot del Reglamento Académico")
-    col1, col2 = st.columns([0.8, 0.2])
-    with col1:
-        st.caption(f"Conectado como: {user_name} ({user_email})")
-    with col2:
-        if st.button("Cerrar Sesión"):
-            supabase.auth.sign_out()
-            st.session_state.clear()
-            st.rerun()
-
+    # Cargar historial de chat desde Supabase
     if "messages" not in st.session_state:
         st.session_state.messages = []
-        history = supabase.table('chat_history').select('role, message').eq('user_id', user_id).order('created_at').execute()
-        for row in history.data:
-            st.session_state.messages.append({"role": row['role'], "content": row['message']})
+        # Obtenemos el ID de usuario de Supabase usando el email
+        user_id_response = supabase.table('profiles').select('id').eq('email', user_email).execute()
+        if user_id_response.data:
+            user_id = user_id_response.data[0]['id']
+            st.session_state.user_id = user_id # Guardamos el ID
+            
+            history = supabase.table('chat_history').select('role, message').eq('user_id', user_id).order('created_at').execute()
+            for row in history.data:
+                st.session_state.messages.append({"role": row['role'], "content": row['message']})
 
+    # Mostrar mensajes del historial
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
+    # Procesar nueva pregunta
     if prompt := st.chat_input("¿Qué duda tienes sobre el reglamento?"):
         
         st.session_state.messages.append({"role": "user", "content": prompt})
@@ -157,7 +140,7 @@ else:
             st.markdown(prompt)
         
         supabase.table('chat_history').insert({
-            'user_id': user_id, 'role': 'user', 'message': prompt
+            'user_id': st.session_state.user_id, 'role': 'user', 'message': prompt
         }).execute()
 
         with st.chat_message("assistant"):
@@ -172,5 +155,37 @@ else:
         st.session_state.messages.append({"role": "assistant", "content": respuesta_bot})
         
         supabase.table('chat_history').insert({
-            'user_id': user_id, 'role': 'assistant', 'message': respuesta_bot
+            'user_id': st.session_state.user_id, 'role': 'assistant', 'message': respuesta_bot
         }).execute()
+
+elif st.session_state["authentication_status"] is False:
+    st.error('Email o contraseña incorrecta')
+
+elif st.session_state["authentication_status"] is None:
+    st.info('Por favor, ingresa tu email y contraseña')
+    
+    # --- Lógica de Registro ---
+    try:
+        if authenticator.register_user('Registrarse', preauthorization=False):
+            # Obtener los datos del formulario de registro
+            email = st.session_state.email
+            name = st.session_state.name
+            password = st.session_state.password
+            
+            # Hashear la contraseña
+            hashed_password = stauth.Hasher([password]).generate()[0]
+            
+            # Insertar el nuevo usuario en la tabla 'profiles' de Supabase
+            insert_response = supabase.table('profiles').insert({
+                'full_name': name,
+                'email': email,
+                'password_hash': hashed_password
+            }).execute()
+            
+            if insert_response.data:
+                st.success('¡Usuario registrado exitosamente! Ahora puedes iniciar sesión.')
+            else:
+                st.error('Error al registrar el usuario en la base de datos.')
+                
+    except Exception as e:
+        st.error(f"Error en el registro: {e}")

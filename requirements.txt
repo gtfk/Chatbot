@@ -9,3 +9,4 @@ chromadb
 sentence-transformers
 rank_bm25
 supabase
+streamlit-authenticator # <-- LIBRERÍA NUEVA
