@@ -1,4 +1,4 @@
-# Versión 5.6 (Estable) - Resumen predefinido para velocidad y eficiencia de API
+# Versión 5.6 (Estable) - CORREGIDO EL SYNTAXERROR
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -142,7 +142,9 @@ if st.session_state["authentication_status"] is True:
                 welcome_message = f"¡Hola {user_name}! Tu historial ha sido limpiado. ¿En qué te puedo ayudar?"
                 st.session_state.messages.append({"role": "assistant", "content": welcome_message})
                 supabase.table('chat_history').insert({
-                    'user_id': st.session_state.user_id, 'role': 'assistant', 'message': welcome_message
+                    'user_id': st.session_state.user_id, 
+                    'role': 'assistant', 
+                    'message': welcome_message
                 }).execute()
                 st.rerun() 
             except Exception as e:
@@ -173,7 +175,7 @@ if st.session_state["authentication_status"] is True:
             welcome_message = f"¡Hola {user_name}! Soy tu asistente del reglamento académico. ¿En qué te puedo ayudar hoy?"
             st.session_state.messages.append({"role": "assistant", "content": welcome_message})
             supabase.table('chat_history').insert({
-                'user_id': st.session_state.user_id, Lógica de la Aplicación (continuación)
+                'user_id': st.session_state.user_id,
                 'role': 'assistant', 
                 'message': welcome_message
             }).execute()
