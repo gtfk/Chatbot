@@ -1,4 +1,4 @@
-# Versión 4.0 - Usando streamlit-authenticator para un login estable
+# Versión 4.1 - Corregido el argumento 'preauthorization' en register_user
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -96,7 +96,6 @@ authenticator = stauth.Authenticate(
 )
 
 # 3. Renderizar el widget de Login/Registro
-# st.session_state.name, st.session_state.authentication_status, st.session_state.username
 st.title("🤖 Chatbot del Reglamento Académico")
 authenticator.login('main')
 
@@ -166,7 +165,11 @@ elif st.session_state["authentication_status"] is None:
     
     # --- Lógica de Registro ---
     try:
-        if authenticator.register_user('Registrarse', preauthorization=False):
+        # --- CORRECCIÓN AQUÍ ---
+        # Se eliminó el argumento 'preauthorization=False'
+        if authenticator.register_user('Registrarse'):
+            # --- FIN DE LA CORRECCIÓN ---
+            
             # Obtener los datos del formulario de registro
             email = st.session_state.email
             name = st.session_state.name
