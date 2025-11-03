@@ -1,4 +1,4 @@
-# Versión 5.5 - Restaurado "Limpiar Chat" y añadido "Olvidé Contraseña"
+# Versión 6.0 - Agente Investigador (sin hardcoding)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -10,6 +10,7 @@ from langchain.retrievers import EnsembleRetriever
 from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
+from langchain.agents import AgentExecutor, create_react_agent, Tool
 import os
 from supabase import create_client, Client
 import streamlit_authenticator as stauth
@@ -36,44 +37,91 @@ supabase = init_supabase_client()
 
 # --- CACHING DE RECURSOS DEL CHATBOT ---
 @st.cache_resource
-def inicializar_cadena():
-    # ... (Esta función es idéntica a la versión anterior) ...
+def inicializar_agente_y_cadena():
+    # --- 1. Cargar y Procesar el PDF ---
     loader = PyPDFLoader("reglamento.pdf")
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
     docs = loader.load_and_split(text_splitter=text_splitter)
+
+    # --- 2. Crear los Embeddings y el Ensemble Retriever ---
     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
     vector_store = Chroma.from_documents(docs, embeddings)
     vector_retriever = vector_store.as_retriever(search_kwargs={"k": 7})
     bm25_retriever = BM25Retriever.from_documents(docs)
     bm25_retriever.k = 7
     retriever = EnsembleRetriever(retrievers=[bm25_retriever, vector_retriever], weights=[0.7, 0.3])
-    llm = ChatGroq(api_key=GROQ_API_KEY, model="llama-3.1-8b-instant", temperature=0.1)
-    prompt_template = """
+
+    # --- 3. Conectarse al Modelo en Groq Cloud ---
+    llm = ChatGroq(
+        api_key=GROQ_API_KEY,
+        model="llama-3.1-8b-instant",
+        temperature=0.1
+    )
+
+    # --- 4. Crear la HERRAMIENTA DE BÚSQUEDA (La única herramienta) ---
+    search_prompt = ChatPromptTemplate.from_template("""
+    Responde la pregunta del usuario de forma clara y concisa, basándote únicamente en el siguiente contexto. Cita el artículo si lo encuentras.
+    CONTEXTO: {context}
+    PREGUNTA: {input}
+    RESPUESTA:
+    """)
+    document_chain = create_stuff_documents_chain(llm, search_prompt)
+    retrieval_chain = create_retrieval_chain(retriever, document_chain)
+
+    tools = [
+        Tool(
+            name="BuscadorReglamento",
+            # Pasamos la función 'invoke' de la cadena directamente
+            func=lambda input_dict: retrieval_chain.invoke(input_dict)['answer'],
+            description="""
+            Es la única herramienta. Úsala para buscar y responder CUALQUIER pregunta sobre el reglamento académico, 
+            como asistencia, notas, reprobación, artículos, etc. 
+            La entrada debe ser una pregunta clara.
+            """
+        ),
+    ]
+
+    # --- 5. Crear el CEREBRO DEL AGENTE (Prompt) ---
+    template = """
     INSTRUCCIÓN PRINCIPAL: Responde SIEMPRE en español, con un tono amigable y cercano.
     
     PERSONAJE: Eres un asistente experto en el reglamento académico de Duoc UC. Estás hablando con un estudiante llamado {user_name}.
     
-    REGLAS IMPORTANTES:
-    1. Dirígete a {user_name} por su nombre al menos una vez en la respuesta (ej. "Claro, {user_name}, te explico...").
-    2. Da una respuesta clara, concisa y directa.
-    3. Basa tu respuesta ÚNICAMENTE en el contexto proporcionado.
-    4. Cita el artículo (ej. "Artículo N°30") si lo encuentras.
-    5. NO añadas información extra que no fue solicitada.
+    REGLAS DE RAZONAMIENTO:
+    1.  **Si la pregunta es específica** (ej. "porcentaje de asistencia", "artículo 20"), usa la herramienta "BuscadorReglamento" una sola vez y da la respuesta.
+    2.  **Si la pregunta es general** (ej. "qué debo saber como alumno nuevo", "resumen del reglamento"), TU TRABAJO es descomponerla. Debes usar la herramienta "BuscadorReglamento" MÚLTIPLES VECES para encontrar los datos clave. Busca al menos:
+        - El porcentaje de asistencia (usa una consulta como "cuál es el porcentaje de asistencia").
+        - La nota mínima para aprobar (usa una consulta como "cuál es la nota mínima para aprobar").
+        - Las causas de reprobación (usa una consulta como "cuáles son las causas de reprobación").
+    3.  **Después de buscar** todos los datos, sintetiza (resume) la información que encontraste en una respuesta amigable y completa para {user_name}.
+    4.  Dirígete a {user_name} por su nombre al menos una vez en la respuesta.
 
-    INSTRUCCIÓN ESPECIAL: Si la pregunta es general (ej. "qué debe saber un alumno nuevo"), crea un resumen que cubra: Asistencia, Calificaciones y Reprobación.
+    HERRAMIENTAS DISPONIBLES:
+    {tools}
 
-    CONTEXTO:
-    {context}
+    Usa el siguiente formato:
 
-    PREGUNTA DE {user_name}:
-    {input}
+    Pregunta: la pregunta original que debes responder
+    Pensamiento: siempre debes pensar qué hacer a continuación
+    Acción: la acción a tomar, debe ser una de [{tool_names}]
+    Entrada de la Acción: la consulta de búsqueda para la herramienta (debe ser una pregunta)
+    Observación: el resultado de la acción
+    ... (este patrón de Pensamiento/Acción/Entrada de la Acción/Observación puede repetirse N veces)
+    Pensamiento: Ahora sé la respuesta final.
+    Respuesta Final: la respuesta final a la pregunta original del usuario.
 
-    RESPUESTA:
+    ¡Comienza!
+
+    Pregunta: {input}
+    Pensamiento:{agent_scratchpad}
     """
-    prompt = ChatPromptTemplate.from_template(prompt_template)
-    document_chain = create_stuff_documents_chain(llm, prompt)
-    retrieval_chain = create_retrieval_chain(retriever, document_chain)
-    return retrieval_chain
+    
+    prompt = ChatPromptTemplate.from_template(template)
+    
+    agent = create_react_agent(llm, tools, prompt)
+    agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True, handle_parsing_errors=True)
+    
+    return agent_executor
 
 # --- LÓGICA DE AUTENTICACIÓN ---
 
@@ -115,39 +163,29 @@ if st.session_state["authentication_status"] is True:
     user_name = st.session_state["name"]
     user_email = st.session_state["username"]
     
-    # --- Interfaz de usuario superior (CON BOTONES RESTAURADOS) ---
     col1, col2, col3 = st.columns([0.6, 0.2, 0.2])
     with col1:
         st.caption(f"Conectado como: {user_name} ({user_email})")
     
     with col2:
-        # BOTÓN DE LIMPIAR CHAT RESTAURADO
         if st.button("Limpiar Chat", use_container_width=True):
             try:
-                # 1. Borrar de Supabase
                 supabase.table('chat_history').delete().eq('user_id', st.session_state.user_id).execute()
-                
-                # 2. Resetear el estado de la sesión
                 st.session_state.messages = []
-                
-                # 3. Añadir mensaje de bienvenida y guardarlo
                 welcome_message = f"¡Hola {user_name}! Tu historial ha sido limpiado. ¿En qué te puedo ayudar?"
                 st.session_state.messages.append({"role": "assistant", "content": welcome_message})
                 supabase.table('chat_history').insert({
-                    'user_id': st.session_state.user_id, 
-                    'role': 'assistant', 
-                    'message': welcome_message
+                    'user_id': st.session_state.user_id, 'role': 'assistant', 'message': welcome_message
                 }).execute()
-                
-                st.rerun() # Recargar la página
+                st.rerun() 
             except Exception as e:
                 st.error(f"No se pudo limpiar el historial: {e}")
 
     with col3:
-        # BOTÓN DE CERRAR SESIÓN
         authenticator.logout(button_name='Cerrar Sesión', location='main', key='logout_button')
     
-    retrieval_chain = inicializar_cadena()
+    # Inicializamos el Agente
+    agent_executor = inicializar_agente_y_cadena()
 
     # Cargar historial de chat desde Supabase
     if 'user_id' not in st.session_state:
@@ -169,9 +207,7 @@ if st.session_state["authentication_status"] is True:
             welcome_message = f"¡Hola {user_name}! Soy tu asistente del reglamento académico. ¿En qué te puedo ayudar hoy?"
             st.session_state.messages.append({"role": "assistant", "content": welcome_message})
             supabase.table('chat_history').insert({
-                'user_id': st.session_state.user_id, 
-                'role': 'assistant', 
-                'message': welcome_message
+                'user_id': st.session_state.user_id, 'role': 'assistant', 'message': welcome_message
             }).execute()
 
     # Mostrar mensajes del historial
@@ -192,11 +228,12 @@ if st.session_state["authentication_status"] is True:
 
         with st.chat_message("assistant"):
             with st.spinner("Pensando... 💭"):
-                response = retrieval_chain.invoke({
+                # ¡Ahora invocamos al Agente!
+                response = agent_executor.invoke({
                     "input": prompt,
                     "user_name": user_name 
                 })
-                respuesta_bot = response["answer"]
+                respuesta_bot = response["output"] # El Agente devuelve 'output'
                 st.markdown(respuesta_bot)
         
         st.session_state.messages.append({"role": "assistant", "content": respuesta_bot})
@@ -207,7 +244,6 @@ if st.session_state["authentication_status"] is True:
 
 # 4. Si el usuario NO está logueado, mostrar Login y Registro
 else:
-    # --- Formulario de Login (en la página principal) ---
     authenticator.login(location='main')
     
     if st.session_state["authentication_status"] is False:
@@ -215,16 +251,14 @@ else:
     elif st.session_state["authentication_status"] is None:
         st.info('Por favor, ingresa tu email y contraseña. ¿Nuevo usuario? Registrate en la barra lateral.')
 
-    # --- CAMBIO CLAVE: MENSAJE DE "OLVIDÉ CONTRASEÑA" ---
     st.markdown("---")
     st.subheader("¿Olvidaste tu contraseña?")
     st.markdown("""
     Debido a que este es un sistema auto-gestionado, no hay un reseteo de contraseña automático.
     
-    **Solución:** Pídele al administrador del proyecto (a ti o a tu compañero de grupo) que **borre tu usuario**
+    **Solución:** Pídele al administrador del proyecto que **borre tu usuario**
     desde la tabla `profiles` en **Supabase**. Una vez borrado, podrás registrarte de nuevo con el mismo email.
     """)
-    # --- FIN DEL CAMBIO ---
 
     # --- FORMULARIO DE REGISTRO PERSONALIZADO (en la barra lateral) ---
     with st.sidebar:
