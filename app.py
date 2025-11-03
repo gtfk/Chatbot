@@ -1,4 +1,4 @@
-# Versión 3.2 - Corregido el acceso a la URL de OAuth
+# Versión 3.3 - Corregido el acceso a la URL de OAuth (objeto vs diccionario)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -80,7 +80,7 @@ if user is None:
     st.title("🤖 Chatbot del Reglamento Académico")
     st.subheader("Por favor, inicia sesión con tu cuenta de Google para continuar")
 
-    google_auth_url = supabase.auth.sign_in_with_oauth({
+    google_auth_url_response = supabase.auth.sign_in_with_oauth({
         "provider": "google",
         "options": {
             "query_params": {"access_type": "offline", "prompt": "consent"},
@@ -89,8 +89,8 @@ if user is None:
     })
     
     # --- CORRECCIÓN AQUÍ ---
-    # La URL está dentro de la clave 'data'
-    st.link_button("Iniciar Sesión con Google", google_auth_url['data']['url'], use_container_width=True, type="primary")
+    # Accedemos a la URL usando .url en el objeto de respuesta
+    st.link_button("Iniciar Sesión con Google", google_auth_url_response.url, use_container_width=True, type="primary")
     # --- FIN DE LA CORRECCIÓN ---
     
     st.markdown("""
