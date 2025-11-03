@@ -1,4 +1,4 @@
-# Versión 5.0 - Personalización (Saludo y Tono Humano)
+# Versión 5.1 - Optimizando para respuestas concisas
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -47,19 +47,20 @@ def inicializar_cadena():
     bm25_retriever = BM25Retriever.from_documents(docs)
     bm25_retriever.k = 7
     retriever = EnsembleRetriever(retrievers=[bm25_retriever, vector_retriever], weights=[0.7, 0.3])
-    llm = ChatGroq(api_key=GROQ_API_KEY, model="llama-3.1-8b-instant", temperature=0.2) # Subimos un poco la temperatura para más creatividad
+    llm = ChatGroq(api_key=GROQ_API_KEY, model="llama-3.1-8b-instant", temperature=0.1)
 
-    # --- CAMBIO CLAVE: NUEVA PERSONALIDAD DEL BOT ---
+    # --- CAMBIO CLAVE: NUEVO PROMPT ENFOCADO EN SER CONCISO ---
     prompt_template = """
-    INSTRUCCIÓN PRINCIPAL: Responde SIEMPRE en español, con un tono amigable, cercano y humano, como si fueras un consejero académico.
+    INSTRUCCIÓN PRINCIPAL: Responde SIEMPRE en español, con un tono amigable pero MUY CONCISO.
     
-    PERSONAJE: Eres un asistente experto en el reglamento académico de Duoc UC. Estás hablando con {user_name}. Tu objetivo es ayudar a {user_name} con sus dudas.
+    PERSONAJE: Eres un asistente experto en el reglamento académico de Duoc UC. Estás hablando con {user_name}.
     
     REGLAS IMPORTANTES:
-    1. Dirígete a {user_name} por su nombre cuando sea natural (ej. "Claro, {user_name}, te explico...").
-    2. Basa tu respuesta ÚNICAMENTE en la información del siguiente contexto. No inventes información.
-    3. Si la respuesta está en el contexto, explícala con tus propias palabras de forma sencilla. Cita el artículo si lo encuentras.
-    4. Si la respuesta no está en el contexto, di amablemente "Lo siento, {user_name}, pero no encuentro información específica sobre eso en el reglamento."
+    1. Tu objetivo es dar la respuesta más directa y breve posible a la pregunta de {user_name}.
+    2. Basa tu respuesta ÚNICAMENTE en el contexto proporcionado.
+    3. Cita el artículo (ej. "Artículo N°30") si lo encuentras.
+    4. NO repitas la pregunta del usuario. Ve directo al grano.
+    5. NO añadas información extra que no fue solicitada, incluso si está en el contexto (ej. sobre excepciones médicas, etc., a menos que te pregunten por ellas).
 
     INSTRUCCIÓN ESPECIAL: Si la pregunta es general (ej. "qué debe saber un alumno nuevo"), crea un resumen que cubra: Asistencia, Calificaciones y Reprobación.
 
@@ -69,7 +70,7 @@ def inicializar_cadena():
     PREGUNTA DE {user_name}:
     {input}
 
-    RESPUESTA AMIGABLE:
+    RESPUESTA CONCISA:
     """
     prompt = ChatPromptTemplate.from_template(prompt_template)
     # --- FIN DEL CAMBIO ---
@@ -110,7 +111,6 @@ authenticator = stauth.Authenticate(
 
 # --- LÓGICA DE LA APLICACIÓN ---
 
-# Título principal
 st.title("🤖 Chatbot del Reglamento Académico")
 
 # 3. Comprobar si el usuario ya está logueado
@@ -124,8 +124,7 @@ if st.session_state["authentication_status"] is True:
     
     retrieval_chain = inicializar_cadena()
 
-    # --- CAMBIO CLAVE: LÓGICA DE BIENVENIDA ---
-    # Obtenemos el ID de usuario de Supabase usando el email
+    # Cargar historial de chat desde Supabase
     if 'user_id' not in st.session_state:
         user_id_response = supabase.table('profiles').select('id').eq('email', user_email).execute()
         if user_id_response.data:
@@ -134,24 +133,19 @@ if st.session_state["authentication_status"] is True:
             st.error("Error crítico: No se pudo encontrar el perfil del usuario logueado.")
             st.stop()
 
-    # Cargar historial de chat desde Supabase
     if "messages" not in st.session_state:
         st.session_state.messages = []
         history = supabase.table('chat_history').select('role, message').eq('user_id', st.session_state.user_id).order('created_at').execute()
         for row in history.data:
             st.session_state.messages.append({"role": row['role'], "content": row['message']})
         
-        # Si el historial está vacío después de cargar, es la primera vez.
+        # Saludo de bienvenida si el historial está vacío
         if not st.session_state.messages:
             welcome_message = f"¡Hola {user_name}! Soy tu asistente del reglamento académico. ¿En qué te puedo ayudar hoy?"
             st.session_state.messages.append({"role": "assistant", "content": welcome_message})
-            # Guardamos el saludo en la base de datos
             supabase.table('chat_history').insert({
-                'user_id': st.session_state.user_id, 
-                'role': 'assistant', 
-                'message': welcome_message
+                'user_id': st.session_state.user_id, 'role': 'assistant', 'message': welcome_message
             }).execute()
-    # --- FIN DEL CAMBIO ---
 
     # Mostrar mensajes del historial
     for message in st.session_state.messages:
@@ -173,7 +167,7 @@ if st.session_state["authentication_status"] is True:
             with st.spinner("Pensando... 💭"):
                 response = retrieval_chain.invoke({
                     "input": prompt,
-                    "user_name": user_name # Pasamos el nombre al prompt
+                    "user_name": user_name 
                 })
                 respuesta_bot = response["answer"]
                 st.markdown(respuesta_bot)
@@ -184,9 +178,8 @@ if st.session_state["authentication_status"] is True:
             'user_id': st.session_state.user_id, 'role': 'assistant', 'message': respuesta_bot
         }).execute()
 
-# 4. Si el usuario NO está logueado, mostrar Login (en 'main') y Registro (en 'sidebar')
+# 4. Si el usuario NO está logueado, mostrar Login y Registro
 else:
-    # --- Formulario de Login (en la página principal) ---
     authenticator.login(location='main')
     
     if st.session_state["authentication_status"] is False:
@@ -194,7 +187,6 @@ else:
     elif st.session_state["authentication_status"] is None:
         st.info('Por favor, ingresa tu email y contraseña. ¿Nuevo usuario? Registrate en la barra lateral.')
 
-    # --- FORMULARIO DE REGISTRO PERSONALIZADO (en la barra lateral) ---
     with st.sidebar:
         st.subheader("¿Nuevo Usuario? Regístrate")
         with st.form(key="register_form", clear_on_submit=True):
@@ -205,17 +197,11 @@ else:
             submit_button = st.form_submit_button(label="Registrarse")
 
             if submit_button:
-                # --- Validaciones ---
-                if not name_reg:
-                    st.error("Por favor, ingresa tu nombre.")
-                elif not email_reg:
-                    st.error("Por favor, ingresa tu email.")
-                elif password_reg != confirm_password_reg:
-                    st.error("Las contraseñas no coinciden.")
-                elif len(password_reg) < 6:
-                    st.error("La contraseña debe tener al menos 6 caracteres.")
+                if not name_reg: st.error("Por favor, ingresa tu nombre.")
+                elif not email_reg: st.error("Por favor, ingresa tu email.")
+                elif password_reg != confirm_password_reg: st.error("Las contraseñas no coinciden.")
+                elif len(password_reg) < 6: st.error("La contraseña debe tener al menos 6 caracteres.")
                 else:
-                    # --- Si todo es válido, intentar registrar ---
                     try:
                         hasher = stauth.Hasher()
                         hashed_password = hasher.hash(password_reg)
@@ -227,7 +213,7 @@ else:
                         }).execute()
                         
                         if insert_response.data:
-                            st.success('¡Usuario registrado! Ahora puedes iniciar sesión en la página principal.')
+                            st.success('¡Usuario registrado! Ahora puedes iniciar sesión.')
                             time.sleep(2) 
                         else:
                             st.error('Error al registrar el usuario en la base de datos.')
