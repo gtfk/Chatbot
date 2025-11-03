@@ -37,7 +37,7 @@ supabase = init_supabase_client()
 # --- CACHING DE RECURSOS DEL CHATBOT ---
 @st.cache_resource
 def inicializar_cadena():
-    # ... (Carga de PDF y Retrievers - sin cambios) ...
+    # ... (Carga de PDF y Retrievers) ...
     loader = PyPDFLoader("reglamento.pdf")
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
     docs = loader.load_and_split(text_splitter=text_splitter)
@@ -173,7 +173,9 @@ if st.session_state["authentication_status"] is True:
             welcome_message = f"¡Hola {user_name}! Soy tu asistente del reglamento académico. ¿En qué te puedo ayudar hoy?"
             st.session_state.messages.append({"role": "assistant", "content": welcome_message})
             supabase.table('chat_history').insert({
-                'user_id': st.session_state.user_id, 'role': 'assistant', 'message': welcome_message
+                'user_id': st.session_state.user_id, Lógica de la Aplicación (continuación)
+                'role': 'assistant', 
+                'message': welcome_message
             }).execute()
 
     # Mostrar mensajes del historial
