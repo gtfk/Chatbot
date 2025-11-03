@@ -1,4 +1,4 @@
-# Versión 4.10 - Corregida la lógica de carga del user_id
+# Versión 5.0 - Personalización (Saludo y Tono Humano)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -37,7 +37,7 @@ supabase = init_supabase_client()
 # --- CACHING DE RECURSOS DEL CHATBOT ---
 @st.cache_resource
 def inicializar_cadena():
-    # ... (Esta función es idéntica a la versión anterior) ...
+    # ... (Carga de PDF y Retrievers - sin cambios) ...
     loader = PyPDFLoader("reglamento.pdf")
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
     docs = loader.load_and_split(text_splitter=text_splitter)
@@ -47,17 +47,33 @@ def inicializar_cadena():
     bm25_retriever = BM25Retriever.from_documents(docs)
     bm25_retriever.k = 7
     retriever = EnsembleRetriever(retrievers=[bm25_retriever, vector_retriever], weights=[0.7, 0.3])
-    llm = ChatGroq(api_key=GROQ_API_KEY, model="llama-3.1-8b-instant", temperature=0.1)
+    llm = ChatGroq(api_key=GROQ_API_KEY, model="llama-3.1-8b-instant", temperature=0.2) # Subimos un poco la temperatura para más creatividad
+
+    # --- CAMBIO CLAVE: NUEVA PERSONALIDAD DEL BOT ---
     prompt_template = """
-    INSTRUCCIÓN PRINCIPAL: Responde SIEMPRE en español.
-    Eres un asistente experto en el reglamento académico de Duoc UC. Estás hablando con un estudiante llamado {user_name}.
-    Tu objetivo es dar respuestas claras y precisas basadas ÚNICAMENTE en el contexto proporcionado.
+    INSTRUCCIÓN PRINCIPAL: Responde SIEMPRE en español, con un tono amigable, cercano y humano, como si fueras un consejero académico.
+    
+    PERSONAJE: Eres un asistente experto en el reglamento académico de Duoc UC. Estás hablando con {user_name}. Tu objetivo es ayudar a {user_name} con sus dudas.
+    
+    REGLAS IMPORTANTES:
+    1. Dirígete a {user_name} por su nombre cuando sea natural (ej. "Claro, {user_name}, te explico...").
+    2. Basa tu respuesta ÚNICAMENTE en la información del siguiente contexto. No inventes información.
+    3. Si la respuesta está en el contexto, explícala con tus propias palabras de forma sencilla. Cita el artículo si lo encuentras.
+    4. Si la respuesta no está en el contexto, di amablemente "Lo siento, {user_name}, pero no encuentro información específica sobre eso en el reglamento."
+
     INSTRUCCIÓN ESPECIAL: Si la pregunta es general (ej. "qué debe saber un alumno nuevo"), crea un resumen que cubra: Asistencia, Calificaciones y Reprobación.
-    CONTEXTO: {context}
-    PREGUNTA DEL ESTUDIANTE: {input}
-    RESPUESTA:
+
+    CONTEXTO:
+    {context}
+
+    PREGUNTA DE {user_name}:
+    {input}
+
+    RESPUESTA AMIGABLE:
     """
     prompt = ChatPromptTemplate.from_template(prompt_template)
+    # --- FIN DEL CAMBIO ---
+    
     document_chain = create_stuff_documents_chain(llm, prompt)
     retrieval_chain = create_retrieval_chain(retriever, document_chain)
     return retrieval_chain
@@ -83,7 +99,7 @@ def fetch_all_users():
         st.error(f"Error al cargar usuarios: {e}")
         return {'usernames': {}}
 
-# 2. Configurar el Autenticador (solo lo usaremos para login y logout)
+# 2. Configurar el Autenticador
 credentials = fetch_all_users()
 authenticator = stauth.Authenticate(
     credentials,
@@ -108,24 +124,34 @@ if st.session_state["authentication_status"] is True:
     
     retrieval_chain = inicializar_cadena()
 
-    # --- CORRECCIÓN AQUÍ ---
-    # 1. Nos aseguramos de tener el user_id en la sesión SIEMPRE
+    # --- CAMBIO CLAVE: LÓGICA DE BIENVENIDA ---
+    # Obtenemos el ID de usuario de Supabase usando el email
     if 'user_id' not in st.session_state:
         user_id_response = supabase.table('profiles').select('id').eq('email', user_email).execute()
         if user_id_response.data:
             st.session_state.user_id = user_id_response.data[0]['id']
         else:
-            # Esto no debería pasar si el login fue exitoso, pero es un buen control
             st.error("Error crítico: No se pudo encontrar el perfil del usuario logueado.")
             st.stop()
 
-    # 2. Cargamos el historial solo si la lista de mensajes está vacía
+    # Cargar historial de chat desde Supabase
     if "messages" not in st.session_state:
         st.session_state.messages = []
         history = supabase.table('chat_history').select('role, message').eq('user_id', st.session_state.user_id).order('created_at').execute()
         for row in history.data:
             st.session_state.messages.append({"role": row['role'], "content": row['message']})
-    # --- FIN DE LA CORRECCIÓN ---
+        
+        # Si el historial está vacío después de cargar, es la primera vez.
+        if not st.session_state.messages:
+            welcome_message = f"¡Hola {user_name}! Soy tu asistente del reglamento académico. ¿En qué te puedo ayudar hoy?"
+            st.session_state.messages.append({"role": "assistant", "content": welcome_message})
+            # Guardamos el saludo en la base de datos
+            supabase.table('chat_history').insert({
+                'user_id': st.session_state.user_id, 
+                'role': 'assistant', 
+                'message': welcome_message
+            }).execute()
+    # --- FIN DEL CAMBIO ---
 
     # Mostrar mensajes del historial
     for message in st.session_state.messages:
@@ -139,7 +165,6 @@ if st.session_state["authentication_status"] is True:
         with st.chat_message("user"):
             st.markdown(prompt)
         
-        # Esta línea ahora funcionará porque st.session_state.user_id está garantizado
         supabase.table('chat_history').insert({
             'user_id': st.session_state.user_id, 'role': 'user', 'message': prompt
         }).execute()
@@ -148,7 +173,7 @@ if st.session_state["authentication_status"] is True:
             with st.spinner("Pensando... 💭"):
                 response = retrieval_chain.invoke({
                     "input": prompt,
-                    "user_name": user_name
+                    "user_name": user_name # Pasamos el nombre al prompt
                 })
                 respuesta_bot = response["answer"]
                 st.markdown(respuesta_bot)
