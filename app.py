@@ -1,4 +1,4 @@
-# Versión 5.2 - Equilibrio final: Conciso Y Personalizado
+# Versión 5.3 - Añadido botón "Limpiar Chat"
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -37,7 +37,7 @@ supabase = init_supabase_client()
 # --- CACHING DE RECURSOS DEL CHATBOT ---
 @st.cache_resource
 def inicializar_cadena():
-    # ... (Carga de PDF y Retrievers - sin cambios) ...
+    # ... (Esta función es idéntica a la versión anterior) ...
     loader = PyPDFLoader("reglamento.pdf")
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
     docs = loader.load_and_split(text_splitter=text_splitter)
@@ -48,8 +48,6 @@ def inicializar_cadena():
     bm25_retriever.k = 7
     retriever = EnsembleRetriever(retrievers=[bm25_retriever, vector_retriever], weights=[0.7, 0.3])
     llm = ChatGroq(api_key=GROQ_API_KEY, model="llama-3.1-8b-instant", temperature=0.1)
-
-    # --- CAMBIO CLAVE: INSTRUCCIÓN EXPLÍCITA DE USAR EL NOMBRE ---
     prompt_template = """
     INSTRUCCIÓN PRINCIPAL: Responde SIEMPRE en español, con un tono amigable y cercano.
     
@@ -73,8 +71,6 @@ def inicializar_cadena():
     RESPUESTA:
     """
     prompt = ChatPromptTemplate.from_template(prompt_template)
-    # --- FIN DEL CAMBIO ---
-    
     document_chain = create_stuff_documents_chain(llm, prompt)
     retrieval_chain = create_retrieval_chain(retriever, document_chain)
     return retrieval_chain
@@ -119,8 +115,37 @@ if st.session_state["authentication_status"] is True:
     user_name = st.session_state["name"]
     user_email = st.session_state["username"]
     
-    authenticator.logout('Cerrar Sesión')
-    st.caption(f"Conectado como: {user_name} ({user_email})")
+    # --- CAMBIO CLAVE: INTERFAZ DE BIENVENIDA Y BOTONES ---
+    col1, col2, col3 = st.columns([0.6, 0.2, 0.2])
+    with col1:
+        st.caption(f"Conectado como: {user_name} ({user_email})")
+    
+    with col2:
+        if st.button("Limpiar Chat", use_container_width=True):
+            try:
+                # 1. Borrar de Supabase
+                supabase.table('chat_history').delete().eq('user_id', st.session_state.user_id).execute()
+                
+                # 2. Resetear el estado de la sesión
+                st.session_state.messages = []
+                
+                # 3. Añadir mensaje de bienvenida y guardarlo
+                welcome_message = f"¡Hola {user_name}! Tu historial ha sido limpiado. ¿En qué te puedo ayudar?"
+                st.session_state.messages.append({"role": "assistant", "content": welcome_message})
+                supabase.table('chat_history').insert({
+                    'user_id': st.session_state.user_id, 
+                    'role': 'assistant', 
+                    'message': welcome_message
+                }).execute()
+                
+                st.rerun() # Recargar la página
+            except Exception as e:
+                st.error(f"No se pudo limpiar el historial: {e}")
+
+    with col3:
+        # Usamos la sintaxis explícita y correcta para el botón de logout
+        authenticator.logout(button_name='Cerrar Sesión', location='main', key='logout_button')
+    # --- FIN DEL CAMBIO ---
     
     retrieval_chain = inicializar_cadena()
 
@@ -144,7 +169,9 @@ if st.session_state["authentication_status"] is True:
             welcome_message = f"¡Hola {user_name}! Soy tu asistente del reglamento académico. ¿En qué te puedo ayudar hoy?"
             st.session_state.messages.append({"role": "assistant", "content": welcome_message})
             supabase.table('chat_history').insert({
-                'user_id': st.session_state.user_id, 'role': 'assistant', 'message': welcome_message
+                'user_id': st.session_state.user_id, 
+                'role': 'assistant', 
+                'message': welcome_message
             }).execute()
 
     # Mostrar mensajes del historial
@@ -180,13 +207,15 @@ if st.session_state["authentication_status"] is True:
 
 # 4. Si el usuario NO está logueado, mostrar Login y Registro
 else:
-    authenticator.login(location='main')
+    # --- Formulario de Login (en la página principal) ---
+    name, authentication_status, username = authenticator.login(location='main', key='login_form')
     
     if st.session_state["authentication_status"] is False:
         st.error('Email o contraseña incorrecta')
     elif st.session_state["authentication_status"] is None:
         st.info('Por favor, ingresa tu email y contraseña. ¿Nuevo usuario? Registrate en la barra lateral.')
 
+    # --- FORMULARIO DE REGISTRO PERSONALIZADO (en la barra lateral) ---
     with st.sidebar:
         st.subheader("¿Nuevo Usuario? Regístrate")
         with st.form(key="register_form", clear_on_submit=True):
