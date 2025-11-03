@@ -1,4 +1,4 @@
-# Versión 5.4 - Corregida la llamada a authenticator.login()
+# Versión 5.5 - Restaurado "Limpiar Chat" y añadido "Olvidé Contraseña"
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -115,8 +115,37 @@ if st.session_state["authentication_status"] is True:
     user_name = st.session_state["name"]
     user_email = st.session_state["username"]
     
-    authenticator.logout(button_name='Cerrar Sesión', location='main', key='logout_button')
-    st.caption(f"Conectado como: {user_name} ({user_email})")
+    # --- Interfaz de usuario superior (CON BOTONES RESTAURADOS) ---
+    col1, col2, col3 = st.columns([0.6, 0.2, 0.2])
+    with col1:
+        st.caption(f"Conectado como: {user_name} ({user_email})")
+    
+    with col2:
+        # BOTÓN DE LIMPIAR CHAT RESTAURADO
+        if st.button("Limpiar Chat", use_container_width=True):
+            try:
+                # 1. Borrar de Supabase
+                supabase.table('chat_history').delete().eq('user_id', st.session_state.user_id).execute()
+                
+                # 2. Resetear el estado de la sesión
+                st.session_state.messages = []
+                
+                # 3. Añadir mensaje de bienvenida y guardarlo
+                welcome_message = f"¡Hola {user_name}! Tu historial ha sido limpiado. ¿En qué te puedo ayudar?"
+                st.session_state.messages.append({"role": "assistant", "content": welcome_message})
+                supabase.table('chat_history').insert({
+                    'user_id': st.session_state.user_id, 
+                    'role': 'assistant', 
+                    'message': welcome_message
+                }).execute()
+                
+                st.rerun() # Recargar la página
+            except Exception as e:
+                st.error(f"No se pudo limpiar el historial: {e}")
+
+    with col3:
+        # BOTÓN DE CERRAR SESIÓN
+        authenticator.logout(button_name='Cerrar Sesión', location='main', key='logout_button')
     
     retrieval_chain = inicializar_cadena()
 
@@ -178,16 +207,24 @@ if st.session_state["authentication_status"] is True:
 
 # 4. Si el usuario NO está logueado, mostrar Login y Registro
 else:
-    # --- CORRECCIÓN AQUÍ ---
-    # Simplemente llamamos a la función. Los resultados se manejarán
-    # automáticamente a través de st.session_state.
+    # --- Formulario de Login (en la página principal) ---
     authenticator.login(location='main')
-    # --- FIN DE LA CORRECCIÓN ---
     
     if st.session_state["authentication_status"] is False:
         st.error('Email o contraseña incorrecta')
     elif st.session_state["authentication_status"] is None:
         st.info('Por favor, ingresa tu email y contraseña. ¿Nuevo usuario? Registrate en la barra lateral.')
+
+    # --- CAMBIO CLAVE: MENSAJE DE "OLVIDÉ CONTRASEÑA" ---
+    st.markdown("---")
+    st.subheader("¿Olvidaste tu contraseña?")
+    st.markdown("""
+    Debido a que este es un sistema auto-gestionado, no hay un reseteo de contraseña automático.
+    
+    **Solución:** Pídele al administrador del proyecto (a ti o a tu compañero de grupo) que **borre tu usuario**
+    desde la tabla `profiles` en **Supabase**. Una vez borrado, podrás registrarte de nuevo con el mismo email.
+    """)
+    # --- FIN DEL CAMBIO ---
 
     # --- FORMULARIO DE REGISTRO PERSONALIZADO (en la barra lateral) ---
     with st.sidebar:
