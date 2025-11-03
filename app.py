@@ -1,4 +1,4 @@
-# Versión 4.9 - Corregido el método de Hasher de .generate() a .hash()
+# Versión 4.10 - Corregida la lógica de carga del user_id
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -108,17 +108,24 @@ if st.session_state["authentication_status"] is True:
     
     retrieval_chain = inicializar_cadena()
 
-    # Cargar historial de chat desde Supabase
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
+    # --- CORRECCIÓN AQUÍ ---
+    # 1. Nos aseguramos de tener el user_id en la sesión SIEMPRE
+    if 'user_id' not in st.session_state:
         user_id_response = supabase.table('profiles').select('id').eq('email', user_email).execute()
         if user_id_response.data:
-            user_id = user_id_response.data[0]['id']
-            st.session_state.user_id = user_id 
-            
-            history = supabase.table('chat_history').select('role, message').eq('user_id', user_id).order('created_at').execute()
-            for row in history.data:
-                st.session_state.messages.append({"role": row['role'], "content": row['message']})
+            st.session_state.user_id = user_id_response.data[0]['id']
+        else:
+            # Esto no debería pasar si el login fue exitoso, pero es un buen control
+            st.error("Error crítico: No se pudo encontrar el perfil del usuario logueado.")
+            st.stop()
+
+    # 2. Cargamos el historial solo si la lista de mensajes está vacía
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+        history = supabase.table('chat_history').select('role, message').eq('user_id', st.session_state.user_id).order('created_at').execute()
+        for row in history.data:
+            st.session_state.messages.append({"role": row['role'], "content": row['message']})
+    # --- FIN DE LA CORRECCIÓN ---
 
     # Mostrar mensajes del historial
     for message in st.session_state.messages:
@@ -132,6 +139,7 @@ if st.session_state["authentication_status"] is True:
         with st.chat_message("user"):
             st.markdown(prompt)
         
+        # Esta línea ahora funcionará porque st.session_state.user_id está garantizado
         supabase.table('chat_history').insert({
             'user_id': st.session_state.user_id, 'role': 'user', 'message': prompt
         }).execute()
@@ -184,18 +192,13 @@ else:
                 else:
                     # --- Si todo es válido, intentar registrar ---
                     try:
-                        # --- CORRECCIÓN AQUÍ ---
-                        # 1. Inicializar el Hasher
                         hasher = stauth.Hasher()
-                        # 2. Generar el hash desde una lista de contraseñas
                         hashed_password = hasher.hash(password_reg)
-                        # --- FIN DE LA CORRECCIÓN ---
                         
-                        # Insertar el nuevo usuario en la tabla 'profiles' de Supabase
                         insert_response = supabase.table('profiles').insert({
                             'full_name': name_reg,
                             'email': email_reg,
-                            'password_hash': hashed_password # El método .hash() devuelve un solo hash
+                            'password_hash': hashed_password
                         }).execute()
                         
                         if insert_response.data:
