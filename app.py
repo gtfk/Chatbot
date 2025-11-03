@@ -1,4 +1,4 @@
-# Versión 4.5 - Moviendo el Registro a la Sidebar para evitar conflictos
+# Versión 4.6 - Corregida la firma de 'register_user'
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -104,7 +104,11 @@ if st.session_state["authentication_status"] is True:
     user_name = st.session_state["name"]
     user_email = st.session_state["username"]
     
-    authenticator.logout('Cerrar Sesión')
+    # --- CORRECCIÓN AQUÍ ---
+    # Se llama a logout() solo con la ubicación
+    authenticator.logout(location='main')
+    # --- FIN CORRECCIÓN ---
+    
     st.caption(f"Conectado como: {user_name} ({user_email})")
     
     retrieval_chain = inicializar_cadena()
@@ -155,7 +159,11 @@ if st.session_state["authentication_status"] is True:
 # 4. Si el usuario NO está logueado, mostrar Login (en 'main') y Registro (en 'sidebar')
 else:
     # --- Formulario de Login (en la página principal) ---
-    authenticator.login()
+    # --- CORRECCIÓN AQUÍ ---
+    # Se llama a login() solo con la ubicación
+    authenticator.login(location='main')
+    # --- FIN CORRECCIÓN ---
+    
     if st.session_state["authentication_status"] is False:
         st.error('Email o contraseña incorrecta')
     elif st.session_state["authentication_status"] is None:
@@ -164,8 +172,8 @@ else:
     # --- Formulario de Registro (en la barra lateral) ---
     try:
         # --- CORRECCIÓN AQUÍ ---
-        # Le decimos a este widget que se renderice en la 'sidebar'
-        if authenticator.register_user('Registrarse', location='sidebar'):
+        # Se llama a register_user() solo con la ubicación
+        if authenticator.register_user(location='sidebar'):
         # --- FIN DE LA CORRECCIÓN ---
         
             email = st.session_state.email
