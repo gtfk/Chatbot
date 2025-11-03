@@ -1,4 +1,4 @@
-# Versión 3.3 - Corregido el acceso a la URL de OAuth (objeto vs diccionario)
+# Versión 3.4 - Manejo de sesión de OAuth más robusto
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -62,17 +62,24 @@ def inicializar_cadena():
     return retrieval_chain
 
 # --- MANEJO DE SESIÓN DE USUARIO ---
-user = None
-if 'user' in st.session_state:
-    user = st.session_state.user
-else:
+def get_user_session():
+    # Intenta obtener la sesión
     try:
         session = supabase.auth.get_session()
         if session and session.user:
-            user = session.user
-            st.session_state.user = user
-    except Exception:
-        pass 
+            st.session_state.user = session.user
+            return session.user
+    except Exception as e:
+        st.error(f"Error al verificar la sesión: {e}")
+        return None
+    return None
+
+# Verificamos si el usuario ya está en el estado de la sesión
+if 'user' in st.session_state and st.session_state.user:
+    user = st.session_state.user
+else:
+    # Si no, intentamos obtenerla (esto puede fallar por las cookies)
+    user = get_user_session()
 
 # --- LÓGICA DE AUTENTICACIÓN (PANTALLA DE LOGIN) ---
 if user is None:
@@ -88,16 +95,17 @@ if user is None:
         }
     })
     
-    # --- CORRECCIÓN AQUÍ ---
-    # Accedemos a la URL usando .url en el objeto de respuesta
-    st.link_button("Iniciar Sesión con Google", google_auth_url_response.url, use_container_width=True, type="primary")
-    # --- FIN DE LA CORRECCIÓN ---
+    st.link_button("1. Iniciar Sesión con Google", google_auth_url_response.url, use_container_width=True, type="primary")
     
+    st.markdown("---")
+    st.subheader("¿Ya iniciaste sesión?")
     st.markdown("""
-    **Nota Importante:** Después de iniciar sesión en la ventana de Google, serás redirigido. 
-    **Deberás volver a cargar esta página del chatbot manualmente** para que la sesión se active.
+    Si ya te logueaste con Google y estás viendo esta pantalla de nuevo, haz clic en el botón de abajo para verificar tu sesión.
     """)
-
+    if st.button("2. Verificar Sesión / Entrar", use_container_width=True):
+        get_user_session() # Intenta obtener la sesión de nuevo
+        st.rerun() # Recarga la página
+        
 # --- LÓGICA PRINCIPAL DEL CHATBOT (SI ESTÁ LOGUEADO) ---
 else:
     retrieval_chain = inicializar_cadena()
