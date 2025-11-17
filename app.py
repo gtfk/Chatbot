@@ -1,4 +1,4 @@
-# Versión 7.1 - Corregido el error de Pydantic v1 usando el decorador @tool
+# Versión 6.3 - Corregido el botón "Cerrar Sesión"
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -6,16 +6,12 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_community.retrievers import BM25Retriever
+# --- Importación Estándar para EnsembleRetriever (para versión 0.1.x) ---
 from langchain.retrievers import EnsembleRetriever
+# --- Fin ---
 from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
-from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
-# Importaciones clave para el Agente
-from langchain.agents import AgentExecutor, create_react_agent
-# --- CAMBIO AQUÍ: Importamos 'tool' en lugar de 'Tool', 'BaseModel', 'Field' ---
-from langchain_core.tools import tool
-# --- FIN DEL CAMBIO ---
-
+from langchain_core.prompts import ChatPromptTemplate
 import os
 from supabase import create_client, Client
 import streamlit_authenticator as stauth
@@ -23,7 +19,7 @@ import time
 from datetime import time as dt_time # Para comparar horarios
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
-st.set_page_config(page_title="Asistente Académico Duoc UC", page_icon="🤖", layout="wide")
+st.set_page_config(page_title="Chatbot Académico Duoc UC", page_icon="🤖", layout="wide")
 
 # --- CARGA DE CLAVES DE API ---
 GROQ_API_KEY = st.secrets.get("GROQ_API_KEY")
@@ -43,8 +39,8 @@ supabase = init_supabase_client()
 
 # --- CACHING DE RECURSOS DEL CHATBOT ---
 @st.cache_resource
-def inicializar_componentes():
-    # ... (Esta función es idéntica a la versión anterior) ...
+def inicializar_cadena():
+    # ... (Esta función es idéntica a la versión anterior, con el resumen predefinido) ...
     loader = PyPDFLoader("reglamento.pdf")
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
     docs = loader.load_and_split(text_splitter=text_splitter)
@@ -55,8 +51,38 @@ def inicializar_componentes():
     bm25_retriever.k = 7
     retriever = EnsembleRetriever(retrievers=[bm25_retriever, vector_retriever], weights=[0.7, 0.3])
     llm = ChatGroq(api_key=GROQ_API_KEY, model="llama-3.1-8b-instant", temperature=0.1)
+    prompt_template = """
+    INSTRUCCIÓN PRINCIPAL: Responde SIEMPRE en español, con un tono amigable y cercano.
+    PERSONAJE: Eres un asistente experto en el reglamento académico de Duoc UC. Estás hablando con un estudiante llamado {user_name}.
+    REGLAS IMPORTANTES:
+    1. Dirígete a {user_name} por su nombre al menos una vez en la respuesta.
+    2. Da una respuesta clara, concisa y directa.
+    3. Basa tu respuesta ÚNICAMENTE en el contexto proporcionado.
+    4. Cita el artículo (ej. "Artículo N°30") si lo encuentras.
+
+    INSTRUCCIÓN ESPECIAL: 
+    Si la pregunta del usuario es general sobre ser un "alumno nuevo" o "qué debería saber", 
+    IGNORA EL CONTEXTO y responde EXACTAMENTE con este resumen:
+    "¡Hola {user_name}! Como alumno nuevo, lo más importante que debes saber del reglamento es:
     
-    return llm, retriever
+    1.  **Asistencia (Art. 30):** Debes cumplir con un **70% de asistencia** tanto en las actividades teóricas como en las prácticas para aprobar.
+    2.  **Calificaciones (Art. 37):** La nota mínima para aprobar una asignatura es un **4,0**.
+    3.  **Reprobación (Art. 39):** Repruebas una asignatura si tu nota final es inferior a 4,0 o si no cumples con el 70% de asistencia.
+    
+    ¡Espero que esto te ayude, {user_name}! Si tienes otra duda más específica, solo pregunta."
+
+    Si la pregunta NO es general, sigue las reglas normales y usa el contexto.
+
+    CONTEXTO:
+    {context}
+    PREGUNTA DE {user_name}:
+    {input}
+    RESPUESTA:
+    """
+    prompt = ChatPromptTemplate.from_template(prompt_template)
+    document_chain = create_stuff_documents_chain(llm, prompt)
+    retrieval_chain = create_retrieval_chain(retriever, document_chain)
+    return retrieval_chain
 
 # --- LÓGICA DE AUTENTICACIÓN ---
 def fetch_all_users():
@@ -86,7 +112,7 @@ authenticator = stauth.Authenticate(
 )
 
 # --- INICIO DE LA LÓGICA DE LA APLICACIÓN ---
-st.title("🤖 Asistente Académico Duoc UC")
+st.title("🤖 Chatbot Académico Duoc UC")
 
 # 3. Comprobar si el usuario ya está logueado
 if st.session_state["authentication_status"] is True:
@@ -104,264 +130,199 @@ if st.session_state["authentication_status"] is True:
     
     user_id = st.session_state.user_id
 
-    # --- Encabezado y Logout ---
-    col1, col2, col3 = st.columns([0.6, 0.2, 0.2])
+    # --- Encabezado y Logout (Fuera de las pestañas) ---
+    col1, col2 = st.columns([0.8, 0.2])
     with col1:
         st.caption(f"Conectado como: {user_name} ({user_email})")
     with col2:
-        if st.button("Limpiar Chat", use_container_width=True, key="clear_chat"):
+        # --- CORRECCIÓN AQUÍ ---
+        # Usamos un 'st.button' normal y luego llamamos a las funciones
+        if st.button("Cerrar Sesión", use_container_width=True, key="logout_button_global"):
+            authenticator.logout() # Borra la cookie
+            st.session_state.clear() # Borra la memoria de Streamlit
+            st.rerun() # Recarga la página
+        # --- FIN DE LA CORRECCIÓN ---
+
+    # --- NAVEGACIÓN PRINCIPAL (PESTAÑAS) ---
+    tab1, tab2 = st.tabs(["Chatbot de Reglamento", "Inscripción de Asignaturas"])
+
+    # --- PESTAÑA 1: CHATBOT DE REGLAMENTO ---
+    with tab1:
+        if st.button("Limpiar Historial del Chat", use_container_width=True, key="clear_chat"):
             supabase.table('chat_history').delete().eq('user_id', user_id).execute()
             st.session_state.messages = []
-            welcome_message = f"¡Hola {user_name}! Tu historial ha sido limpiado. ¿En qué te puedo ayudar hoy?"
+            welcome_message = f"¡Hola {user_name}! Tu historial ha sido limpiado. ¿En qué te puedo ayudar?"
             st.session_state.messages.append({"role": "assistant", "content": welcome_message})
             supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': welcome_message}).execute()
             st.rerun() 
-    with col3:
-        if st.button("Cerrar Sesión", use_container_width=True, key="logout_button_global"):
-            authenticator.logout()
-            st.session_state.clear()
-            st.rerun()
-            
-    st.divider()
-
-    # --- INICIALIZACIÓN DEL AGENTE Y HERRAMIENTAS ---
-    llm, retriever = inicializar_componentes()
-
-    # --- Definición de Herramientas (Usando @tool) ---
-    
-    # Herramienta 1: Buscador de Reglamento (RAG)
-    rag_prompt_template = """
-    INSTRUCCIÓN PRINCIPAL: Responde SIEMPRE en español, con un tono amigable y cercano.
-    PERSONAJE: Eres un asistente experto en el reglamento académico de Duoc UC. Estás hablando con un estudiante llamado {user_name}.
-    REGLAS IMPORTANTES:
-    1. Dirígete a {user_name} por su nombre al menos una vez en la respuesta.
-    2. Da una respuesta clara, concisa y directa.
-    3. Basa tu respuesta ÚNICAMENTE en el contexto proporcionado.
-    4. Cita el artículo (ej. "Artículo N°30") si lo encuentras.
-
-    INSTRUCCIÓN ESPECIAL: 
-    Si la pregunta del usuario es general sobre ser un "alumno nuevo" o "qué debería saber", 
-    IGNORA EL CONTEXTO y responde EXACTAMENTE con este resumen:
-    "¡Hola {user_name}! Como alumno nuevo, lo más importante que debes saber del reglamento es:
-    
-    1.  **Asistencia (Art. 30):** Debes cumplir con un **70% de asistencia** tanto en las actividades teóricas como en las prácticas para aprobar.
-    2.  **Calificaciones (Art. 37):** La nota mínima para aprobar una asignatura es un **4,0**.
-    3.  **Reprobación (Art. 39):** Repruebas una asignatura si tu nota final es inferior a 4,0 o si no cumples con el 70% de asistencia.
-    
-    ¡Espero que esto te ayude, {user_name}! Si tienes otra duda más específica, solo pregunta."
-
-    Si la pregunta NO es general, sigue las reglas normales y usa el contexto.
-
-    CONTEXTO:
-    {context}
-    PREGUNTA DE {user_name}:
-    {input}
-    RESPUESTA:
-    """
-    rag_prompt = ChatPromptTemplate.from_template(rag_prompt_template)
-    document_chain = create_stuff_documents_chain(llm, rag_prompt)
-    retrieval_chain = create_retrieval_chain(retriever, document_chain)
-
-    @tool
-    def run_rag_chain(query: str) -> str:
-        """Responde preguntas específicas sobre el reglamento académico, artículos, normas, asistencia, y preguntas generales de 'alumno nuevo'."""
-        response = retrieval_chain.invoke({"input": query, "user_name": user_name})
-        return response["answer"]
-
-    # Herramienta 2: Buscador de Asignaturas
-    def get_user_schedule(user_uuid): # Esta es una función auxiliar, no una herramienta
-        user_regs = supabase.table('registrations').select('section_id').eq('user_id', user_uuid).execute().data
-        if not user_regs: return [], []
-        section_ids = [reg['section_id'] for reg in user_regs]
-        schedule_data = supabase.table('sections').select('subject_id, day_of_week, start_time, end_time').in_('id', section_ids).execute().data
-        schedule = []
-        registered_subject_ids = []
-        for sec in schedule_data:
-            schedule.append({
-                "day": sec['day_of_week'],
-                "start": dt_time.fromisoformat(sec['start_time']),
-                "end": dt_time.fromisoformat(sec['end_time'])
-            })
-            registered_subject_ids.append(sec['subject_id'])
-        return schedule, registered_subject_ids
-
-    @tool
-    def buscar_asignaturas(nombre_asignatura: str) -> str:
-        """Busca secciones disponibles para una asignatura, verificando cupos y si el usuario ya la inscribió. La entrada es el nombre de la asignatura (ej. 'Matemáticas I')."""
-        try:
-            subject_response = supabase.table('subjects').select('id').ilike('name', f'%{nombre_asignatura}%').execute()
-            if not subject_response.data:
-                return f"Lo siento {user_name}, no encontré ninguna asignatura con el nombre '{nombre_asignatura}'."
-            
-            selected_subject_id = subject_response.data[0]['id']
-            
-            _ , registered_subject_ids = get_user_schedule(user_id)
-            if selected_subject_id in registered_subject_ids:
-                return f"{user_name}, ya tienes esa asignatura inscrita en otra sección. Debes anularla primero si quieres cambiarla."
-
-            sections_response = supabase.table('sections').select('*').eq('subject_id', selected_subject_id).execute()
-            if not sections_response.data:
-                return f"No hay secciones disponibles para '{nombre_asignatura}' en este momento."
-
-            respuesta = f"¡Claro, {user_name}! Encontré estas secciones para '{nombre_asignatura}':\n"
-            secciones_encontradas = 0
-            
-            for sec in sections_response.data:
-                registrations_count_response = supabase.table('registrations').select('id', count='exact').eq('section_id', sec['id']).execute()
-                registrations_count = registrations_count_response.count
-                cupos_disponibles = sec['capacity'] - (registrations_count if registrations_count else 0)
-                
-                if cupos_disponibles > 0:
-                    secciones_encontradas += 1
-                    respuesta += f"\n* **Sección {sec['section_code']}**: {sec['day_of_week']} de {sec['start_time']} a {sec['end_time']}. Quedan {cupos_disponibles} cupos. (Prof: {sec['professor_name']})"
-            
-            if secciones_encontradas == 0:
-                return f"Lo siento {user_name}, todas las secciones para '{nombre_asignatura}' están llenas."
-            
-            respuesta += f"\n\nPara inscribirte, dime: 'inscribe la sección [código]', por ejemplo: 'inscribe la sección {sections_response.data[0]['section_code']}'."
-            return respuesta
-            
-        except Exception as e:
-            return f"Error al buscar asignaturas: {e}"
-
-    # Herramienta 3: Inscriptor de Asignaturas
-    @tool
-    def inscribir_asignatura(section_code: str) -> str:
-        """Inscribe al usuario en una sección de una asignatura. La entrada es el código de la sección (ej. '001D')."""
-        try:
-            section_response = supabase.table('sections').select('*').eq('section_code', section_code.upper()).execute()
-            if not section_response.data:
-                return f"No pude encontrar la sección '{section_code}'. Por favor, verifica el código."
-            
-            section_to_register = section_response.data[0]
-            
-            user_schedule, registered_subject_ids = get_user_schedule(user_id)
-            if section_to_register['subject_id'] in registered_subject_ids:
-                return f"Error: Ya tienes esta asignatura inscrita en otra sección. Debes anularla primero."
-            
-            registrations_count_response = supabase.table('registrations').select('id', count='exact').eq('section_id', section_to_register['id']).execute()
-            registrations_count = registrations_count_response.count
-            cupos_disponibles = section_to_register['capacity'] - (registrations_count if registrations_count else 0)
-            
-            if cupos_disponibles <= 0:
-                return f"Lo siento, {user_name}, la sección {section_code} se acaba de llenar. No quedan cupos."
-            
-            def check_schedule_conflict(user_schedule, new_section):
-                new_day = new_section['day_of_week']
-                new_start = dt_time.fromisoformat(new_section['start_time'])
-                new_end = dt_time.fromisoformat(new_section['end_time'])
-                for scheduled in user_schedule:
-                    if scheduled['day'] == new_day:
-                        if max(scheduled['start'], new_start) < min(scheduled['end'], new_end):
-                            return True 
-                return False
-            
-            if check_schedule_conflict(user_schedule, section_to_register):
-                return f"¡Error! La sección {section_code} ({section_to_register['day_of_week']} {section_to_register['start_time']}) tiene un tope de horario con otra asignatura que ya tienes."
-
-            supabase.table('registrations').insert({
-                'user_id': user_id,
-                'section_id': section_to_register['id']
-            }).execute()
-            
-            return f"¡Éxito, {user_name}! Has sido inscrito en la sección {section_code}."
-            
-        except Exception as e:
-            return f"Error al inscribir: {e}"
-
-    # --- Creación del Agente ---
-    # --- CAMBIO AQUÍ: La lista de 'tools' es ahora la lista de funciones decoradas ---
-    tools = [
-        run_rag_chain,
-        buscar_asignaturas,
-        inscribir_asignatura,
-    ]
-
-    # Prompt del Agente (en español)
-    # --- CAMBIO AQUÍ: Actualizamos los nombres de las herramientas para que coincidan con los nombres de las funciones ---
-    agent_prompt_template = """
-    INSTRUCCIÓN PRINCIPAL: Responde SIEMPRE en español, con un tono amigable y cercano.
-    
-    PERSONAJE: Eres un asistente académico de Duoc UC. Estás hablando con un estudiante llamado {user_name}.
-    
-    REGLAS DE RAZONAMIENTO:
-    1.  Tu trabajo es entender la intención del usuario y usar la herramienta correcta.
-    2.  Si la pregunta es sobre el reglamento (asistencia, notas, artículos, alumno nuevo), usa "run_rag_chain".
-    3.  Si el usuario quiere SABER sobre asignaturas (ej. "qué secciones hay de cálculo"), usa "buscar_asignaturas".
-    4.  Si el usuario quiere INSCRIBIR una sección (ej. "inscríbeme en la 001D"), usa "inscribir_asignatura".
-    5.  Dirígete a {user_name} por su nombre.
-
-    HERRAMIENTAS DISPONIBLES:
-    {tools}
-
-    Usa el siguiente formato:
-
-    Pregunta: la pregunta original que debes responder
-    Pensamiento: siempre debes pensar qué hacer a continuación
-    Acción: la acción a tomar, debe ser una de [{tool_names}]
-    Entrada de la Acción: la entrada para la acción (si es inscribir_asignatura, debe ser solo el código de sección)
-    Observación: el resultado de la acción
-    ... (este patrón de Pensamiento/Acción/Entrada de la Acción/Observación puede repetirse N veces)
-    Pensamiento: Ahora sé la respuesta final.
-    Respuesta Final: la respuesta final a la pregunta original del usuario.
-
-    ¡Comienza!
-
-    Pregunta: {input}
-    Pensamiento:{agent_scratchpad}
-    """
-    
-    agent_prompt = PromptTemplate.from_template(agent_prompt_template)
-    
-    agent = create_react_agent(llm, tools, agent_prompt)
-    agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True, handle_parsing_errors=True)
-    
-    # --- FIN DE LA INICIALIZACIÓN DEL AGENTE ---
-    
-    # Cargar historial de chat desde Supabase
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-        history = supabase.table('chat_history').select('role, message').eq('user_id', user_id).order('created_at').execute()
-        for row in history.data:
-            st.session_state.messages.append({"role": row['role'], "content": row['message']})
         
-        # Saludo de bienvenida si el historial está vacío
-        if not st.session_state.messages:
-            welcome_message = f"¡Hola {user_name}! Soy tu asistente académico. Puedes preguntarme sobre el reglamento o pedirme que busque o inscriba asignaturas."
-            st.session_state.messages.append({"role": "assistant", "content": welcome_message})
-            supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': welcome_message}).execute()
-
-    # Mostrar mensajes del historial
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-
-    # Procesar nueva pregunta
-    if prompt := st.chat_input("¿Qué duda tienes?"):
+        st.divider() 
         
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
-        
-        supabase.table('chat_history').insert({
-            'user_id': st.session_state.user_id, 'role': 'user', 'message': prompt
-        }).execute()
+        retrieval_chain = inicializar_cadena()
 
-        with st.chat_message("assistant"):
-            with st.spinner("Pensando... 💭"):
-                # ¡Ahora invocamos al Agente!
-                response = agent_executor.invoke({
-                    "input": prompt,
-                    "user_name": user_name 
+        # Cargar historial de chat
+        if "messages" not in st.session_state:
+            st.session_state.messages = []
+            history = supabase.table('chat_history').select('role, message').eq('user_id', user_id).order('created_at').execute()
+            for row in history.data:
+                st.session_state.messages.append({"role": row['role'], "content": row['message']})
+            if not st.session_state.messages:
+                welcome_message = f"¡Hola {user_name}! Soy tu asistente del reglamento académico. ¿En qué te puedo ayudar hoy?"
+                st.session_state.messages.append({"role": "assistant", "content": welcome_message})
+                supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': welcome_message}).execute()
+
+        # Mostrar mensajes del historial
+        for message in st.session_state.messages:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+
+        # Procesar nueva pregunta
+        if prompt := st.chat_input("¿Qué duda tienes sobre el reglamento?"):
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            with st.chat_message("user"):
+                st.markdown(prompt)
+            supabase.table('chat_history').insert({'user_id': user_id, 'role': 'user', 'message': prompt}).execute()
+
+            with st.chat_message("assistant"):
+                with st.spinner("Pensando... 💭"):
+                    response = retrieval_chain.invoke({"input": prompt, "user_name": user_name })
+                    respuesta_bot = response["answer"]
+                    st.markdown(respuesta_bot)
+            st.session_state.messages.append({"role": "assistant", "content": respuesta_bot})
+            supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': respuesta_bot}).execute()
+
+    # --- PESTAÑA 2: INSCRIPCIÓN DE ASIGNATURAS ---
+    with tab2:
+        st.header("Inscripción de Asignaturas")
+        
+        # 1. Obtener el horario actual del usuario
+        @st.cache_data(ttl=60) 
+        def get_user_schedule(user_uuid):
+            user_regs = supabase.table('registrations').select('section_id').eq('user_id', user_uuid).execute().data
+            if not user_regs:
+                return [], []
+            
+            section_ids = [reg['section_id'] for reg in user_regs]
+            schedule_data = supabase.table('sections').select('subject_id, day_of_week, start_time, end_time').in_('id', section_ids).execute().data
+            
+            schedule = []
+            registered_subject_ids = []
+            for sec in schedule_data:
+                schedule.append({
+                    "day": sec['day_of_week'],
+                    "start": dt_time.fromisoformat(sec['start_time']),
+                    "end": dt_time.fromisoformat(sec['end_time'])
                 })
-                respuesta_bot = response["output"] # El Agente devuelve 'output'
-                st.markdown(respuesta_bot)
+                registered_subject_ids.append(sec['subject_id'])
+            return schedule, registered_subject_ids
+
+        # 2. Función para verificar el tope de horario
+        def check_schedule_conflict(user_schedule, new_section):
+            new_day = new_section['day_of_week']
+            new_start = dt_time.fromisoformat(new_section['start_time'])
+            new_end = dt_time.fromisoformat(new_section['end_time'])
+            
+            for scheduled in user_schedule:
+                if scheduled['day'] == new_day:
+                    if max(scheduled['start'], new_start) < min(scheduled['end'], new_end):
+                        return True 
+            return False 
+
+        # 3. Obtener todas las asignaturas disponibles
+        @st.cache_data(ttl=300) 
+        def get_all_subjects():
+            subjects_response = supabase.table('subjects').select('id, name').order('name').execute()
+            return {subj['name']: subj['id'] for subj in subjects_response.data}
         
-        st.session_state.messages.append({"role": "assistant", "content": respuesta_bot})
+        subjects_dict = get_all_subjects()
         
-        supabase.table('chat_history').insert({
-            'user_id': st.session_state.user_id, 'role': 'assistant', 'message': respuesta_bot
-        }).execute()
+        if not subjects_dict:
+             st.warning("No hay asignaturas cargadas en la base de datos. Por favor, ejecuta el script de 'seeding' de Colab.")
+        else:
+            selected_subject_name = st.selectbox("Selecciona una asignatura para inscribir:", options=subjects_dict.keys())
+            
+            if selected_subject_name:
+                selected_subject_id = subjects_dict[selected_subject_name]
+                
+                sections_response = supabase.table('sections').select('*').eq('subject_id', selected_subject_id).execute()
+                sections = sections_response.data
+                
+                if not sections:
+                    st.warning("No hay secciones disponibles para esta asignatura.")
+                else:
+                    st.subheader(f"Secciones disponibles para {selected_subject_name}:")
+                    
+                    user_schedule, registered_subject_ids = get_user_schedule(user_id)
+                    
+                    if selected_subject_id in registered_subject_ids:
+                        st.error("Ya tienes esta asignatura inscrita en otra sección.")
+                    else:
+                        for sec in sections:
+                            col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
+                            
+                            registrations_count_response = supabase.table('registrations').select('id', count='exact').eq('section_id', sec['id']).execute()
+                            registrations_count = registrations_count_response.count
+                            cupos_disponibles = sec['capacity'] - (registrations_count if registrations_count else 0)
+                            
+                            col1.text(f"Sección {sec['section_code']}")
+                            col2.text(f"{sec['day_of_week']} de {sec['start_time']} a {sec['end_time']}")
+                            col3.text(f"{cupos_disponibles} de {sec['capacity']} cupos disponibles")
+                            
+                            with col4:
+                                if cupos_disponibles > 0:
+                                    if st.button("Inscribir", key=sec['id']):
+                                        if check_schedule_conflict(user_schedule, sec):
+                                            st.error(f"¡Tope de horario! Ya tienes una clase el {sec['day_of_week']} a esa hora.")
+                                        else:
+                                            try:
+                                                supabase.table('registrations').insert({
+                                                    'user_id': user_id,
+                                                    'section_id': sec['id']
+                                                }).execute()
+                                                st.success(f"¡Inscrito en la sección {sec['section_code']}!")
+                                                st.cache_data.clear() 
+                                                st.rerun()
+                                            except Exception as e:
+                                                st.error(f"Error al inscribir: {e}")
+                                else:
+                                    st.button("Llena", disabled=True, key=sec['id'])
+
+        # 9. Mostrar horario actual del usuario
+        st.divider()
+        st.subheader(f"Horario Actual de {user_name}")
+        
+        current_schedule_info, _ = get_user_schedule(user_id) 
+        
+        if not current_schedule_info:
+            st.info("Aún no tienes asignaturas inscritas.")
+        else:
+            all_regs_response = supabase.table('registrations').select(
+                'id, sections(subject_id, section_code, day_of_week, start_time, end_time, subjects(name))'
+            ).eq('user_id', user_id).execute()
+            
+            all_regs = all_regs_response.data
+
+            col1, col2, col3, col4 = st.columns([3, 2, 2, 1])
+            col1.write("**Asignatura**")
+            col2.write("**Día**")
+            col3.write("**Horario**")
+            col4.write("**Acción**")
+
+            for reg in all_regs:
+                sec = reg['sections']
+                if sec and sec['subjects']:
+                    col1, col2, col3, col4 = st.columns([3, 2, 2, 1])
+                    
+                    col1.write(f"{sec['subjects']['name']} (Sección {sec['section_code']})")
+                    col2.write(sec['day_of_week'])
+                    col3.write(f"{sec['start_time']} - {sec['end_time']}")
+                    
+                    with col4:
+                        if st.button("Anular", key=f"del_{reg['id']}", type="primary", use_container_width=True):
+                            supabase.table('registrations').delete().eq('id', reg['id']).execute()
+                            st.success(f"Has anulado {sec['subjects']['name']}.")
+                            st.cache_data.clear() 
+                            st.rerun() 
 
 # 4. Si el usuario NO está logueado, mostrar Login y Registro
 else:
