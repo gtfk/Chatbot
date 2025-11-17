@@ -1,4 +1,4 @@
-# Versión 6.0 - Botón de Logout Global y Botón de Limpiar Chat en Pestaña 1
+# Versión 6.1 - Añadido botón "Anular Inscripción"
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -111,14 +111,14 @@ authenticator = stauth.Authenticate(
 )
 
 # --- INICIO DE LA LÓGICA DE LA APLICACIÓN ---
-st.title("🤖 Chatbot del Reglamento Académico")
+st.title("🤖 Chatbot Académico Duoc UC")
 
 # 3. Comprobar si el usuario ya está logueado
 if st.session_state["authentication_status"] is True:
     user_name = st.session_state["name"]
     user_email = st.session_state["username"]
     
-    # Cargar user_id en la sesión (lo hacemos aquí para que esté disponible globalmente)
+    # Cargar user_id en la sesión
     if 'user_id' not in st.session_state:
         user_id_response = supabase.table('profiles').select('id').eq('email', user_email).execute()
         if user_id_response.data:
@@ -129,23 +129,21 @@ if st.session_state["authentication_status"] is True:
     
     user_id = st.session_state.user_id
 
-    # --- CAMBIO CLAVE: Encabezado y Logout (Fuera de las pestañas) ---
+    # --- Encabezado y Logout (Fuera de las pestañas) ---
     col1, col2 = st.columns([0.8, 0.2])
     with col1:
         st.caption(f"Conectado como: {user_name} ({user_email})")
     with col2:
         if st.button("Cerrar Sesión", use_container_width=True, key="logout_button_global"):
-            authenticator.logout() # Esto limpia la cookie y st.session_state
-            st.session_state.clear() # Limpieza forzada de todo el estado
-            st.rerun() # Forzamos recarga
-    # --- FIN DEL CAMBIO ---
+            authenticator.logout() 
+            st.session_state.clear() 
+            st.rerun() 
 
     # --- NAVEGACIÓN PRINCIPAL (PESTAÑAS) ---
     tab1, tab2 = st.tabs(["Chatbot de Reglamento", "Inscripción de Asignaturas"])
 
     # --- PESTAÑA 1: CHATBOT DE REGLAMENTO ---
     with tab1:
-        # El botón de Limpiar Chat solo tiene sentido aquí
         if st.button("Limpiar Historial del Chat", use_container_width=True, key="clear_chat"):
             supabase.table('chat_history').delete().eq('user_id', user_id).execute()
             st.session_state.messages = []
@@ -154,7 +152,7 @@ if st.session_state["authentication_status"] is True:
             supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': welcome_message}).execute()
             st.rerun() 
         
-        st.divider() # Separador visual
+        st.divider() 
         
         retrieval_chain = inicializar_cadena()
 
@@ -285,7 +283,7 @@ if st.session_state["authentication_status"] is True:
                                 else:
                                     st.button("Llena", disabled=True, key=sec['id'])
 
-        # 9. Mostrar horario actual del usuario
+        # --- CAMBIO CLAVE: LÓGICA PARA ANULAR ASIGNATURAS ---
         st.divider()
         st.subheader(f"Horario Actual de {user_name}")
         
@@ -294,21 +292,39 @@ if st.session_state["authentication_status"] is True:
         if not current_schedule_info:
             st.info("Aún no tienes asignaturas inscritas.")
         else:
-            all_regs_response = supabase.table('registrations').select('sections(subject_id, section_code, day_of_week, start_time, end_time, subjects(name))').eq('user_id', user_id).execute()
-            all_regs = all_regs_response.data
+            # Re-consultamos los datos COMPLETOS, incluyendo el ID de registro
+            all_regs_response = supabase.table('registrations').select(
+                'id, sections(subject_id, section_code, day_of_week, start_time, end_time, subjects(name))'
+            ).eq('user_id', user_id).execute()
             
-            schedule_display = []
+            all_regs = all_regs_response.data
+
+            # Creamos un encabezado para la tabla
+            col1, col2, col3, col4 = st.columns([3, 2, 2, 1])
+            col1.write("**Asignatura**")
+            col2.write("**Día**")
+            col3.write("**Horario**")
+            col4.write("**Acción**")
+
+            # Mostramos cada asignatura inscrita con un botón de "Anular"
             for reg in all_regs:
                 sec = reg['sections']
-                if sec and sec['subjects']: 
-                    schedule_display.append({
-                        "Asignatura": sec['subjects']['name'],
-                        "Sección": sec['section_code'],
-                        "Día": sec['day_of_week'],
-                        "Horario": f"{sec['start_time']} - {sec['end_time']}"
-                    })
-            
-            st.dataframe(schedule_display, use_container_width=True)
+                if sec and sec['subjects']:
+                    col1, col2, col3, col4 = st.columns([3, 2, 2, 1])
+                    
+                    col1.write(f"{sec['subjects']['name']} (Sección {sec['section_code']})")
+                    col2.write(sec['day_of_week'])
+                    col3.write(f"{sec['start_time']} - {sec['end_time']}")
+                    
+                    with col4:
+                        # Usamos el ID de la *inscripción* (reg['id']) como clave
+                        if st.button("Anular", key=f"del_{reg['id']}", type="primary", use_container_width=True):
+                            # Borramos la inscripción de Supabase
+                            supabase.table('registrations').delete().eq('id', reg['id']).execute()
+                            st.success(f"Has anulado {sec['subjects']['name']}.")
+                            st.cache_data.clear() # Limpiar todo el caché de datos
+                            st.rerun() # Recargar la página
+        # --- FIN DEL CAMBIO ---
 
 # 4. Si el usuario NO está logueado, mostrar Login y Registro
 else:
