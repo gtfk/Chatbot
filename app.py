@@ -1,4 +1,4 @@
-# Versión 5.6 (Estable) - CORREGIDO EL SYNTAXERROR
+# Versión 5.7 - Añadida Inscripción de Asignaturas
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -14,6 +14,7 @@ import os
 from supabase import create_client, Client
 import streamlit_authenticator as stauth
 import time
+from datetime import time as dt_time # Para comparar horarios
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(page_title="Chatbot Académico Duoc UC", page_icon="🤖", layout="wide")
@@ -37,33 +38,34 @@ supabase = init_supabase_client()
 # --- CACHING DE RECURSOS DEL CHATBOT ---
 @st.cache_resource
 def inicializar_cadena():
-    # ... (Carga de PDF y Retrievers) ...
+    # --- 1. Cargar y Procesar el PDF ---
     loader = PyPDFLoader("reglamento.pdf")
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
     docs = loader.load_and_split(text_splitter=text_splitter)
+
+    # --- 2. Crear los Embeddings y el Ensemble Retriever ---
     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
     vector_store = Chroma.from_documents(docs, embeddings)
     vector_retriever = vector_store.as_retriever(search_kwargs={"k": 7})
     bm25_retriever = BM25Retriever.from_documents(docs)
     bm25_retriever.k = 7
     retriever = EnsembleRetriever(retrievers=[bm25_retriever, vector_retriever], weights=[0.7, 0.3])
+
+    # --- 3. Conectarse al Modelo en Groq Cloud ---
     llm = ChatGroq(api_key=GROQ_API_KEY, model="llama-3.1-8b-instant", temperature=0.1)
 
-    # --- CAMBIO CLAVE: INSTRUCCIÓN ESPECIAL CON RESPUESTA PREDEFINIDA ---
+    # --- 4. Crear la Cadena de Conversación (con respuesta predefinida) ---
     prompt_template = """
     INSTRUCCIÓN PRINCIPAL: Responde SIEMPRE en español, con un tono amigable y cercano.
-    
     PERSONAJE: Eres un asistente experto en el reglamento académico de Duoc UC. Estás hablando con un estudiante llamado {user_name}.
-    
     REGLAS IMPORTANTES:
-    1. Dirígete a {user_name} por su nombre al menos una vez en la respuesta (ej. "Claro, {user_name}, te explico...").
+    1. Dirígete a {user_name} por su nombre al menos una vez en la respuesta.
     2. Da una respuesta clara, concisa y directa.
     3. Basa tu respuesta ÚNICAMENTE en el contexto proporcionado.
     4. Cita el artículo (ej. "Artículo N°30") si lo encuentras.
-    5. NO añadas información extra que no fue solicitada.
 
     INSTRUCCIÓN ESPECIAL: 
-    Si la pregunta del usuario es general sobre ser un "alumno nuevo" o "qué debería saber" (como "hola soy un alumno nuevo que cosas estaria bueno saber"), 
+    Si la pregunta del usuario es general sobre ser un "alumno nuevo" o "qué debería saber", 
     IGNORA EL CONTEXTO y responde EXACTAMENTE con este resumen:
     "¡Hola {user_name}! Como alumno nuevo, lo más importante que debes saber del reglamento es:
     
@@ -77,22 +79,17 @@ def inicializar_cadena():
 
     CONTEXTO:
     {context}
-
     PREGUNTA DE {user_name}:
     {input}
-
     RESPUESTA:
     """
     prompt = ChatPromptTemplate.from_template(prompt_template)
-    # --- FIN DEL CAMBIO ---
     
     document_chain = create_stuff_documents_chain(llm, prompt)
     retrieval_chain = create_retrieval_chain(retriever, document_chain)
     return retrieval_chain
 
 # --- LÓGICA DE AUTENTICACIÓN ---
-
-# 1. Cargar todos los perfiles de usuario desde Supabase
 def fetch_all_users():
     try:
         response = supabase.table('profiles').select("email, full_name, password_hash").execute()
@@ -111,7 +108,6 @@ def fetch_all_users():
         st.error(f"Error al cargar usuarios: {e}")
         return {'usernames': {}}
 
-# 2. Configurar el Autenticador
 credentials = fetch_all_users()
 authenticator = stauth.Authenticate(
     credentials,
@@ -120,42 +116,15 @@ authenticator = stauth.Authenticate(
     cookie_expiry_days=30
 )
 
-# --- LÓGICA DE LA APLICACIÓN ---
-
-st.title("🤖 Chatbot del Reglamento Académico")
+# --- INICIO DE LA LÓGICA DE LA APLICACIÓN ---
+st.title("🤖 Chatbot Académico Duoc UC")
 
 # 3. Comprobar si el usuario ya está logueado
 if st.session_state["authentication_status"] is True:
-    # --- Si el login es exitoso ---
     user_name = st.session_state["name"]
     user_email = st.session_state["username"]
     
-    col1, col2, col3 = st.columns([0.6, 0.2, 0.2])
-    with col1:
-        st.caption(f"Conectado como: {user_name} ({user_email})")
-    
-    with col2:
-        if st.button("Limpiar Chat", use_container_width=True):
-            try:
-                supabase.table('chat_history').delete().eq('user_id', st.session_state.user_id).execute()
-                st.session_state.messages = []
-                welcome_message = f"¡Hola {user_name}! Tu historial ha sido limpiado. ¿En qué te puedo ayudar?"
-                st.session_state.messages.append({"role": "assistant", "content": welcome_message})
-                supabase.table('chat_history').insert({
-                    'user_id': st.session_state.user_id, 
-                    'role': 'assistant', 
-                    'message': welcome_message
-                }).execute()
-                st.rerun() 
-            except Exception as e:
-                st.error(f"No se pudo limpiar el historial: {e}")
-
-    with col3:
-        authenticator.logout(button_name='Cerrar Sesión', location='main', key='logout_button')
-    
-    retrieval_chain = inicializar_cadena()
-
-    # Cargar historial de chat desde Supabase
+    # Cargar user_id en la sesión
     if 'user_id' not in st.session_state:
         user_id_response = supabase.table('profiles').select('id').eq('email', user_email).execute()
         if user_id_response.data:
@@ -163,53 +132,195 @@ if st.session_state["authentication_status"] is True:
         else:
             st.error("Error crítico: No se pudo encontrar el perfil del usuario logueado.")
             st.stop()
+    
+    user_id = st.session_state.user_id
 
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-        history = supabase.table('chat_history').select('role, message').eq('user_id', st.session_state.user_id).order('created_at').execute()
-        for row in history.data:
-            st.session_state.messages.append({"role": row['role'], "content": row['message']})
+    # --- NAVEGACIÓN PRINCIPAL (PESTAÑAS) ---
+    tab1, tab2 = st.tabs(["Chatbot de Reglamento", "Inscripción de Asignaturas"])
+
+    # --- PESTAÑA 1: CHATBOT DE REGLAMENTO ---
+    with tab1:
+        st.caption(f"Conectado como: {user_name} ({user_email})")
+        col1, col2 = st.columns([0.8, 0.2])
+        with col1:
+            if st.button("Limpiar Chat", use_container_width=True):
+                supabase.table('chat_history').delete().eq('user_id', user_id).execute()
+                st.session_state.messages = []
+                welcome_message = f"¡Hola {user_name}! Tu historial ha sido limpiado. ¿En qué te puedo ayudar?"
+                st.session_state.messages.append({"role": "assistant", "content": welcome_message})
+                supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': welcome_message}).execute()
+                st.rerun() 
+        with col2:
+            authenticator.logout(button_name='Cerrar Sesión', location='main', key='logout_button')
         
-        # Saludo de bienvenida si el historial está vacío
-        if not st.session_state.messages:
-            welcome_message = f"¡Hola {user_name}! Soy tu asistente del reglamento académico. ¿En qué te puedo ayudar hoy?"
-            st.session_state.messages.append({"role": "assistant", "content": welcome_message})
-            supabase.table('chat_history').insert({
-                'user_id': st.session_state.user_id,
-                'role': 'assistant', 
-                'message': welcome_message
-            }).execute()
+        retrieval_chain = inicializar_cadena()
 
-    # Mostrar mensajes del historial
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+        # Cargar historial de chat
+        if "messages" not in st.session_state:
+            st.session_state.messages = []
+            history = supabase.table('chat_history').select('role, message').eq('user_id', user_id).order('created_at').execute()
+            for row in history.data:
+                st.session_state.messages.append({"role": row['role'], "content": row['message']})
+            if not st.session_state.messages:
+                welcome_message = f"¡Hola {user_name}! Soy tu asistente del reglamento académico. ¿En qué te puedo ayudar hoy?"
+                st.session_state.messages.append({"role": "assistant", "content": welcome_message})
+                supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': welcome_message}).execute()
 
-    # Procesar nueva pregunta
-    if prompt := st.chat_input("¿Qué duda tienes sobre el reglamento?"):
+        # Mostrar mensajes del historial
+        for message in st.session_state.messages:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+
+        # Procesar nueva pregunta
+        if prompt := st.chat_input("¿Qué duda tienes sobre el reglamento?"):
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            with st.chat_message("user"):
+                st.markdown(prompt)
+            supabase.table('chat_history').insert({'user_id': user_id, 'role': 'user', 'message': prompt}).execute()
+
+            with st.chat_message("assistant"):
+                with st.spinner("Pensando... 💭"):
+                    response = retrieval_chain.invoke({"input": prompt, "user_name": user_name })
+                    respuesta_bot = response["answer"]
+                    st.markdown(respuesta_bot)
+            st.session_state.messages.append({"role": "assistant", "content": respuesta_bot})
+            supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': respuesta_bot}).execute()
+
+    # --- PESTAÑA 2: INSCRIPCIÓN DE ASIGNATURAS ---
+    with tab2:
+        st.header("Inscripción de Asignaturas")
         
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
+        # --- LÓGICA DE INSCRIPCIÓN ---
         
-        supabase.table('chat_history').insert({
-            'user_id': st.session_state.user_id, 'role': 'user', 'message': prompt
-        }).execute()
-
-        with st.chat_message("assistant"):
-            with st.spinner("Pensando... 💭"):
-                response = retrieval_chain.invoke({
-                    "input": prompt,
-                    "user_name": user_name 
+        # 1. Obtener el horario actual del usuario
+        @st.cache_data(ttl=60) # Cachear el horario por 60 segundos
+        def get_user_schedule(user_uuid):
+            user_regs = supabase.table('registrations').select('section_id').eq('user_id', user_uuid).execute().data
+            if not user_regs:
+                return [], []
+            
+            section_ids = [reg['section_id'] for reg in user_regs]
+            # Obtener los detalles de las secciones inscritas
+            schedule_data = supabase.table('sections').select('subject_id, day_of_week, start_time, end_time').in_('id', section_ids).execute().data
+            
+            # Convertir a un formato fácil de usar
+            schedule = []
+            registered_subject_ids = []
+            for sec in schedule_data:
+                schedule.append({
+                    "day": sec['day_of_week'],
+                    "start": dt_time.fromisoformat(sec['start_time']),
+                    "end": dt_time.fromisoformat(sec['end_time'])
                 })
-                respuesta_bot = response["answer"]
-                st.markdown(respuesta_bot)
+                registered_subject_ids.append(sec['subject_id'])
+            return schedule, registered_subject_ids
+
+        # 2. Función para verificar el tope de horario
+        def check_schedule_conflict(user_schedule, new_section):
+            new_day = new_section['day_of_week']
+            new_start = dt_time.fromisoformat(new_section['start_time'])
+            new_end = dt_time.fromisoformat(new_section['end_time'])
+            
+            for scheduled in user_schedule:
+                if scheduled['day'] == new_day:
+                    # Lógica de superposición de tiempo
+                    if max(scheduled['start'], new_start) < min(scheduled['end'], new_end):
+                        return True # Hay tope
+            return False # No hay tope
+
+        # 3. Obtener todas las asignaturas disponibles
+        @st.cache_data(ttl=300) # Cachear asignaturas por 5 minutos
+        def get_all_subjects():
+            subjects_response = supabase.table('subjects').select('id, name').order('name').execute()
+            return {subj['name']: subj['id'] for subj in subjects_response.data}
         
-        st.session_state.messages.append({"role": "assistant", "content": respuesta_bot})
+        subjects_dict = get_all_subjects()
         
-        supabase.table('chat_history').insert({
-            'user_id': st.session_state.user_id, 'role': 'assistant', 'message': respuesta_bot
-        }).execute()
+        if not subjects_dict:
+             st.warning("No hay asignaturas cargadas en la base de datos. Por favor, ejecuta el script de 'seeding' de Colab.")
+        else:
+            selected_subject_name = st.selectbox("Selecciona una asignatura para inscribir:", options=subjects_dict.keys())
+            
+            if selected_subject_name:
+                selected_subject_id = subjects_dict[selected_subject_name]
+                
+                # 4. Obtener secciones para la asignatura seleccionada
+                sections_response = supabase.table('sections').select('*').eq('subject_id', selected_subject_id).execute()
+                sections = sections_response.data
+                
+                if not sections:
+                    st.warning("No hay secciones disponibles para esta asignatura.")
+                else:
+                    st.subheader(f"Secciones disponibles para {selected_subject_name}:")
+                    
+                    user_schedule, registered_subject_ids = get_user_schedule(user_id)
+                    
+                    # 5. Verificar si la asignatura ya está inscrita
+                    if selected_subject_id in registered_subject_ids:
+                        st.error("Ya tienes esta asignatura inscrita en otra sección.")
+                    else:
+                        # 6. Mostrar secciones y botón de inscribir
+                        for sec in sections:
+                            col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
+                            
+                            # 7. Contar cupos
+                            registrations_count_response = supabase.table('registrations').select('id', count='exact').eq('section_id', sec['id']).execute()
+                            registrations_count = registrations_count_response.count
+                            cupos_disponibles = sec['capacity'] - (registrations_count if registrations_count else 0)
+                            
+                            col1.text(f"Sección {sec['section_code']}")
+                            col2.text(f"{sec['day_of_week']} de {sec['start_time']} a {sec['end_time']}")
+                            col3.text(f"{cupos_disponibles} de {sec['capacity']} cupos disponibles")
+                            
+                            with col4:
+                                # 8. Lógica del botón Inscribir
+                                if cupos_disponibles > 0:
+                                    if st.button("Inscribir", key=sec['id']):
+                                        # 8a. Verificar tope de horario
+                                        if check_schedule_conflict(user_schedule, sec):
+                                            st.error(f"¡Tope de horario! Ya tienes una clase el {sec['day_of_week']} a esa hora.")
+                                        else:
+                                            # 8b. Inscribir
+                                            try:
+                                                supabase.table('registrations').insert({
+                                                    'user_id': user_id,
+                                                    'section_id': sec['id']
+                                                }).execute()
+                                                st.success(f"¡Inscrito en la sección {sec['section_code']}!")
+                                                st.cache_data.clear() # Limpiar el caché de datos
+                                                st.rerun() # Recargar la página para actualizar el horario
+                                            except Exception as e:
+                                                st.error(f"Error al inscribir: {e}")
+                                else:
+                                    st.button("Llena", disabled=True, key=sec['id'])
+
+        # 9. Mostrar horario actual del usuario
+        st.divider()
+        st.subheader(f"Horario Actual de {user_name}")
+        
+        # Usamos la función cacheada
+        current_schedule_info, _ = get_user_schedule(user_id) 
+        
+        if not current_schedule_info:
+            st.info("Aún no tienes asignaturas inscritas.")
+        else:
+            # Re-consultamos los datos completos para mostrar la tabla
+            all_regs_response = supabase.table('registrations').select('sections(subject_id, section_code, day_of_week, start_time, end_time, subjects(name))').eq('user_id', user_id).execute()
+            all_regs = all_regs_response.data
+            
+            schedule_display = []
+            for reg in all_regs:
+                sec = reg['sections']
+                if sec and sec['subjects']: # Verificación extra por si hay datos incompletos
+                    schedule_display.append({
+                        "Asignatura": sec['subjects']['name'],
+                        "Sección": sec['section_code'],
+                        "Día": sec['day_of_week'],
+                        "Horario": f"{sec['start_time']} - {sec['end_time']}"
+                    })
+            
+            st.dataframe(schedule_display, use_container_width=True)
+
 
 # 4. Si el usuario NO está logueado, mostrar Login y Registro
 else:
