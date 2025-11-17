@@ -1,4 +1,4 @@
-# Versión 6.7 - Corregido el logo y la maquetación
+# Versión 6.8 - Corregido el logo por el banner institucional en la sidebar
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -18,14 +18,14 @@ import streamlit_authenticator as stauth
 import time
 from datetime import time as dt_time # Para comparar horarios
 
-# --- URL DEL LOGO ---
-# Usamos el escudo (cuadrado) que se ve mejor como ícono
-LOGO_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/1/18/Escudo_Pontificia_Universidad_Cat%C3%B3lica_de_Chile.svg/1200px-Escudo_Pontificia_Universidad_Cat%C3%B3lica_de_Chile.svg.png"
+# --- URLs DE LOGOS ---
+LOGO_BANNER_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/a/aa/Logo_DuocUC.svg/2560px-Logo_DuocUC.svg.png"
+LOGO_ICON_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/1/18/Escudo_Pontificia_Universidad_Cat%C3%B3lica_de_Chile.svg/1200px-Escudo_Pontificia_Universidad_Cat%C3%B3lica_de_Chile.svg.png"
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(
     page_title="Chatbot Académico Duoc UC", 
-    page_icon=LOGO_URL, # <-- CAMBIO: Logo en la pestaña del navegador
+    page_icon=LOGO_ICON_URL, # Usamos el escudo como ícono de pestaña
     layout="wide"
 )
 
@@ -122,17 +122,16 @@ authenticator = stauth.Authenticate(
 
 # --- INICIO DE LA LÓGICA DE LA APLICACIÓN ---
 
-# --- CAMBIO CLAVE: Título limpio en la página principal ---
+# Título principal (limpio, sin logo)
 st.title("🤖 Chatbot Académico Duoc UC")
-# --- FIN DEL CAMBIO ---
 
 # 3. Comprobar si el usuario ya está logueado
 if st.session_state["authentication_status"] is True:
     user_name = st.session_state["name"]
     user_email = st.session_state["username"]
     
-    # --- AÑADIR LOGO A LA SIDEBAR (LOGUEADO) ---
-    st.sidebar.image(LOGO_URL, width=100) # Ajusta el ancho si es necesario
+    # --- AÑADIR LOGO BANNER A LA SIDEBAR (LOGUEADO) ---
+    st.sidebar.image(LOGO_BANNER_URL) 
     
     # Cargar user_id en la sesión
     if 'user_id' not in st.session_state:
@@ -357,7 +356,7 @@ else:
     # --- FORMULARIO DE REGISTRO PERSONALIZADO (en la barra lateral) ---
     with st.sidebar:
         # --- AÑADIR LOGO A LA SIDEBAR (LOGOUT) ---
-        st.image(LOGO_URL, width=100) # Ajusta el ancho si es necesario
+        st.image(LOGO_BANNER_URL) # Usamos el banner aquí
         st.subheader("¿Nuevo Usuario? Regístrate")
         with st.form(key="register_form", clear_on_submit=True):
             name_reg = st.text_input("Nombre Completo")
