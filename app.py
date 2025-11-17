@@ -1,4 +1,4 @@
-# Versión 6.2 - Corregida la lógica de Logout (limpieza de sesión completa)
+# Versión 6.3 - Corregida la lógica de Logout (usando st.button)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -134,11 +134,12 @@ if st.session_state["authentication_status"] is True:
     with col1:
         st.caption(f"Conectado como: {user_name} ({user_email})")
     with col2:
-        # --- CORRECCIÓN LÓGICA DE LOGOUT ---
-        # authenticator.logout() crea el botón Y devuelve True si se hace clic
-        if authenticator.logout(button_name='Cerrar Sesión', location='main', key='logout_button_global'):
-            st.session_state.clear() # Limpieza forzada de todo el estado
-            st.rerun() # Forzamos recarga
+        # --- LÓGICA DE LOGOUT CORREGIDA ---
+        # Usamos un st.button normal
+        if st.button("Cerrar Sesión", use_container_width=True, key="logout_button_global"):
+            authenticator.logout() # Esto limpia la cookie y el estado del autenticador
+            st.session_state.clear() # Limpiamos TODO, incluyendo 'user_id' y 'messages'
+            st.rerun() # Forzamos recarga a la página de login
         # --- FIN DE LA CORRECCIÓN ---
 
     # --- NAVEGACIÓN PRINCIPAL (PESTAÑAS) ---
@@ -146,7 +147,6 @@ if st.session_state["authentication_status"] is True:
 
     # --- PESTAÑA 1: CHATBOT DE REGLAMENTO ---
     with tab1:
-        # El botón de Limpiar Chat solo tiene sentido aquí
         if st.button("Limpiar Historial del Chat", use_container_width=True, key="clear_chat"):
             supabase.table('chat_history').delete().eq('user_id', user_id).execute()
             st.session_state.messages = []
