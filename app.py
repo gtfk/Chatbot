@@ -1,4 +1,4 @@
-# Versión 6.5 - Añadido logo desde URL
+# Versión 6.6 - Añadido logo en el título y pestaña del navegador
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -18,8 +18,15 @@ import streamlit_authenticator as stauth
 import time
 from datetime import time as dt_time # Para comparar horarios
 
+# --- URL DEL LOGO ---
+LOGO_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/a/aa/Logo_DuocUC.svg/2560px-Logo_DuocUC.svg.png"
+
 # --- CONFIGURACIÓN DE LA PÁGINA ---
-st.set_page_config(page_title="Chatbot Académico Duoc UC", page_icon="🤖", layout="wide")
+st.set_page_config(
+    page_title="Chatbot Académico Duoc UC", 
+    page_icon=LOGO_URL, # <-- CAMBIO: Logo en la pestaña del navegador
+    layout="wide"
+)
 
 # --- CARGA DE CLAVES DE API ---
 GROQ_API_KEY = st.secrets.get("GROQ_API_KEY")
@@ -36,9 +43,6 @@ def init_supabase_client():
     return create_client(SUPABASE_URL, SUPABASE_KEY)
 
 supabase = init_supabase_client()
-
-# --- URL DEL LOGO ---
-LOGO_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/a/aa/Logo_DuocUC.svg/2560px-Logo_DuocUC.svg.png"
 
 # --- CACHING DE RECURSOS DEL CHATBOT ---
 @st.cache_resource
@@ -116,7 +120,15 @@ authenticator = stauth.Authenticate(
 )
 
 # --- INICIO DE LA LÓGICA DE LA APLICACIÓN ---
-st.title("🤖 Chatbot Académico Duoc UC")
+
+# --- CAMBIO CLAVE: Título Principal con Logo ---
+col_title1, col_title2 = st.columns([0.1, 0.9])
+with col_title1:
+    st.image(LOGO_URL, width=70) # Ajusta el ancho si es necesario
+with col_title2:
+    st.title("Chatbot Académico Duoc UC")
+# --- FIN DEL CAMBIO ---
+
 
 # 3. Comprobar si el usuario ya está logueado
 if st.session_state["authentication_status"] is True:
