@@ -20,7 +20,7 @@ from datetime import time as dt_time # Para comparar horarios
 
 # --- URLs DE LOGOS ---
 LOGO_BANNER_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/a/aa/Logo_DuocUC.svg/2560px-Logo_DuocUC.svg.png"
-LOGO_ICON_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/1/18/Escudo_Pontificia_Universidad_Cat%C3%B3lica_de_Chile.svg/1200px-Escudo_Pontificia_Universidad_Cat%C3%B3lica_de_Chile.svg.png"
+LOGO_ICON_URL = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSlve2kMlU53cq9Tl0DMxP0Ffo0JNap2dXq4q_uSdf4PyFZ9uraw7MU5irI6mA-HG8byNI&usqp=CAU"
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(
