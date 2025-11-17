@@ -1,4 +1,4 @@
-# Versión 6.3 - Corregido el botón "Cerrar Sesión"
+# Versión 6.3 (Estable) - Chatbot + Inscripción + Logout Corregido
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -40,17 +40,23 @@ supabase = init_supabase_client()
 # --- CACHING DE RECURSOS DEL CHATBOT ---
 @st.cache_resource
 def inicializar_cadena():
-    # ... (Esta función es idéntica a la versión anterior, con el resumen predefinido) ...
+    # --- 1. Cargar y Procesar el PDF ---
     loader = PyPDFLoader("reglamento.pdf")
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
     docs = loader.load_and_split(text_splitter=text_splitter)
+
+    # --- 2. Crear los Embeddings y el Ensemble Retriever ---
     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
     vector_store = Chroma.from_documents(docs, embeddings)
     vector_retriever = vector_store.as_retriever(search_kwargs={"k": 7})
     bm25_retriever = BM25Retriever.from_documents(docs)
     bm25_retriever.k = 7
     retriever = EnsembleRetriever(retrievers=[bm25_retriever, vector_retriever], weights=[0.7, 0.3])
+
+    # --- 3. Conectarse al Modelo en Groq Cloud ---
     llm = ChatGroq(api_key=GROQ_API_KEY, model="llama-3.1-8b-instant", temperature=0.1)
+
+    # --- 4. Crear la Cadena de Conversación (con respuesta predefinida) ---
     prompt_template = """
     INSTRUCCIÓN PRINCIPAL: Responde SIEMPRE en español, con un tono amigable y cercano.
     PERSONAJE: Eres un asistente experto en el reglamento académico de Duoc UC. Estás hablando con un estudiante llamado {user_name}.
@@ -80,6 +86,7 @@ def inicializar_cadena():
     RESPUESTA:
     """
     prompt = ChatPromptTemplate.from_template(prompt_template)
+    
     document_chain = create_stuff_documents_chain(llm, prompt)
     retrieval_chain = create_retrieval_chain(retriever, document_chain)
     return retrieval_chain
@@ -135,13 +142,11 @@ if st.session_state["authentication_status"] is True:
     with col1:
         st.caption(f"Conectado como: {user_name} ({user_email})")
     with col2:
-        # --- CORRECCIÓN AQUÍ ---
-        # Usamos un 'st.button' normal y luego llamamos a las funciones
+        # Lógica de Logout corregida
         if st.button("Cerrar Sesión", use_container_width=True, key="logout_button_global"):
             authenticator.logout() # Borra la cookie
             st.session_state.clear() # Borra la memoria de Streamlit
             st.rerun() # Recarga la página
-        # --- FIN DE LA CORRECCIÓN ---
 
     # --- NAVEGACIÓN PRINCIPAL (PESTAÑAS) ---
     tab1, tab2 = st.tabs(["Chatbot de Reglamento", "Inscripción de Asignaturas"])
@@ -344,6 +349,7 @@ else:
 
     # --- FORMULARIO DE REGISTRO PERSONALIZADO (en la barra lateral) ---
     with st.sidebar:
+        st.image("logo.png") # Logo en la sidebar del login
         st.subheader("¿Nuevo Usuario? Regístrate")
         with st.form(key="register_form", clear_on_submit=True):
             name_reg = st.text_input("Nombre Completo")
@@ -379,3 +385,22 @@ else:
                             st.error("Error: Ese email ya está registrado.")
                         else:
                             st.error(f"Error en el registro: {e}")
+```
+
+### 2. Tu `requirements.txt` (El Archivo Clave)
+
+Asegúrate de que tu `requirements.txt` sea el de las **versiones fijadas (pinned)**, que es el que funciona con el código de arriba:
+
+```
+streamlit
+langchain-core==0.1.52
+langchain==0.1.20
+langchain-community==0.0.38
+langchain_groq==0.1.3
+langchain_text_splitters==0.0.1
+pypdf
+chromadb
+sentence-transformers
+rank_bm25
+supabase
+streamlit-authenticator
