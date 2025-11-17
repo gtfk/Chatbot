@@ -1,4 +1,4 @@
-# Versión 5.9 - Corregida la lógica de Logout (limpieza de sesión completa)
+# Versión 6.0 - Botón de Logout Global y Botón de Limpiar Chat en Pestaña 1
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -118,7 +118,7 @@ if st.session_state["authentication_status"] is True:
     user_name = st.session_state["name"]
     user_email = st.session_state["username"]
     
-    # Cargar user_id en la sesión
+    # Cargar user_id en la sesión (lo hacemos aquí para que esté disponible globalmente)
     if 'user_id' not in st.session_state:
         user_id_response = supabase.table('profiles').select('id').eq('email', user_email).execute()
         if user_id_response.data:
@@ -129,31 +129,32 @@ if st.session_state["authentication_status"] is True:
     
     user_id = st.session_state.user_id
 
+    # --- CAMBIO CLAVE: Encabezado y Logout (Fuera de las pestañas) ---
+    col1, col2 = st.columns([0.8, 0.2])
+    with col1:
+        st.caption(f"Conectado como: {user_name} ({user_email})")
+    with col2:
+        if st.button("Cerrar Sesión", use_container_width=True, key="logout_button_global"):
+            authenticator.logout() # Esto limpia la cookie y st.session_state
+            st.session_state.clear() # Limpieza forzada de todo el estado
+            st.rerun() # Forzamos recarga
+    # --- FIN DEL CAMBIO ---
+
     # --- NAVEGACIÓN PRINCIPAL (PESTAÑAS) ---
     tab1, tab2 = st.tabs(["Chatbot de Reglamento", "Inscripción de Asignaturas"])
 
     # --- PESTAÑA 1: CHATBOT DE REGLAMENTO ---
     with tab1:
-        st.caption(f"Conectado como: {user_name} ({user_email})")
-        col1, col2 = st.columns([0.8, 0.2])
-        with col1:
-            if st.button("Limpiar Chat", use_container_width=True):
-                supabase.table('chat_history').delete().eq('user_id', user_id).execute()
-                st.session_state.messages = []
-                welcome_message = f"¡Hola {user_name}! Tu historial ha sido limpiado. ¿En qué te puedo ayudar?"
-                st.session_state.messages.append({"role": "assistant", "content": welcome_message})
-                supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': welcome_message}).execute()
-                st.rerun() 
-        with col2:
-            # --- CORRECCIÓN LÓGICA DE LOGOUT ---
-            if st.button("Cerrar Sesión", use_container_width=True, key="logout_button_main"):
-                authenticator.logout() # Esto setea el status a None y la cookie.
-                
-                # Borramos TODAS las claves de la sesión
-                st.session_state.clear()
-                
-                st.rerun() # Forzamos recarga
-            # --- FIN DE LA CORRECCIÓN ---
+        # El botón de Limpiar Chat solo tiene sentido aquí
+        if st.button("Limpiar Historial del Chat", use_container_width=True, key="clear_chat"):
+            supabase.table('chat_history').delete().eq('user_id', user_id).execute()
+            st.session_state.messages = []
+            welcome_message = f"¡Hola {user_name}! Tu historial ha sido limpiado. ¿En qué te puedo ayudar?"
+            st.session_state.messages.append({"role": "assistant", "content": welcome_message})
+            supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': welcome_message}).execute()
+            st.rerun() 
+        
+        st.divider() # Separador visual
         
         retrieval_chain = inicializar_cadena()
 
