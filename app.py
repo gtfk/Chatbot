@@ -1,4 +1,4 @@
-# Versión 6.8 - Corregido el logo por el banner institucional en la sidebar
+# Versión 7.0 - Logo Cuadrado Duoc UC
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -20,12 +20,13 @@ from datetime import time as dt_time # Para comparar horarios
 
 # --- URLs DE LOGOS ---
 LOGO_BANNER_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/a/aa/Logo_DuocUC.svg/2560px-Logo_DuocUC.svg.png"
+# ¡NUEVA URL PARA EL LOGO CUADRADO DE DUOC UC!
 LOGO_ICON_URL = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSlve2kMlU53cq9Tl0DMxP0Ffo0JNap2dXq4q_uSdf4PyFZ9uraw7MU5irI6mA-HG8byNI&usqp=CAU"
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(
     page_title="Chatbot Académico Duoc UC", 
-    page_icon=LOGO_ICON_URL, # Usamos el escudo como ícono de pestaña
+    page_icon=LOGO_ICON_URL, # Usamos el logo cuadrado como ícono de pestaña
     layout="wide"
 )
 
@@ -122,8 +123,13 @@ authenticator = stauth.Authenticate(
 
 # --- INICIO DE LA LÓGICA DE LA APLICACIÓN ---
 
-# Título principal (limpio, sin logo)
-st.title("🤖 Chatbot Académico Duoc UC")
+# --- Título Principal con Logo (Escudo Cuadrado Duoc UC) ---
+col_title1, col_title2 = st.columns([0.1, 0.9])
+with col_title1:
+    st.image(LOGO_ICON_URL, width=70) # Usamos el logo cuadrado de Duoc UC
+with col_title2:
+    st.title("Chatbot Académico Duoc UC") 
+# --- FIN DEL CAMBIO ---
 
 # 3. Comprobar si el usuario ya está logueado
 if st.session_state["authentication_status"] is True:
@@ -176,7 +182,7 @@ if st.session_state["authentication_status"] is True:
             st.session_state.messages = []
             history = supabase.table('chat_history').select('role, message').eq('user_id', user_id).order('created_at').execute()
             for row in history.data:
-                st.session_state.messages.append({"role": row['role'], "content": row['message']})
+                st.session_state.messages.append({"role": row['role'], "content': row['message']})
             if not st.session_state.messages:
                 welcome_message = f"¡Hola {user_name}! Soy tu asistente del reglamento académico. ¿En qué te puedo ayudar hoy?"
                 st.session_state.messages.append({"role": "assistant", "content": welcome_message})
@@ -342,7 +348,7 @@ else:
     if st.session_state["authentication_status"] is False:
         st.error('Email o contraseña incorrecta')
     elif st.session_state["authentication_status"] is None:
-        st.info('Por favor, ingresa tu email y contraseña. ¿Nuevo usuario? Registrate en la barra lateral.')
+        st.info('Por favor, ingresa tu email y contraseña. ¿Nuevo usuario? Regístrate en la barra lateral.')
 
     st.markdown("---")
     st.subheader("¿Olvidaste tu contraseña?")
@@ -355,7 +361,7 @@ else:
 
     # --- FORMULARIO DE REGISTRO PERSONALIZADO (en la barra lateral) ---
     with st.sidebar:
-        # --- AÑADIR LOGO A LA SIDEBAR (LOGOUT) ---
+        # --- AÑADIR LOGO BANNER A LA SIDEBAR (LOGOUT) ---
         st.image(LOGO_BANNER_URL) # Usamos el banner aquí
         st.subheader("¿Nuevo Usuario? Regístrate")
         with st.form(key="register_form", clear_on_submit=True):
