@@ -1,4 +1,4 @@
-# Versión 7.4 (Estable) - Corregido el argumento de forgot_password()
+# Versión 7.5 (Estable) - Formulario "Olvidé Contraseña" personalizado
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -19,8 +19,8 @@ import time
 from datetime import time as dt_time
 
 # --- URLs DE LOGOS ---
-LOGO_BANNER_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/a/aa/Logo_DuocUC.svg/2560px-Logo_DuocUC.svg.png"
-LOGO_ICON_URL = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSlve2kMlU53cq9Tl0DMxP0Ffo0JNap2dXq4q_uSdf4PyFZ9uraw7MU5irI6mA-HG8byNI&usqp=CAU"
+LOGO_BANNER_URL = "https.upload.wikimedia.org/wikipedia/commons/thumb/a/aa/Logo_DuocUC.svg/2560px-Logo_DuocUC.svg.png"
+LOGO_ICON_URL = "https.encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSlve2kMlU53cq9Tl0DMxP0Ffo0JNap2dXq4q_uSdf4PyFZ9uraw7MU5irI6mA-HG8byNI&usqp=CAU"
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(
@@ -232,7 +232,7 @@ if st.session_state["authentication_status"] is True:
                     st.markdown(respuesta_bot)
             
             response_bot_insert = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': respuesta_bot}).execute()
-            new_message_id = response_bot_insert.data[0]['id'] if response_bot_insert.data else None
+            new_bot_message_id = response_bot_insert.data[0]['id'] if response_bot_insert.data else None
             
             st.session_state.messages.append({"id": new_bot_message_id, "role": "assistant", "content": respuesta_bot})
             st.rerun()
@@ -356,27 +356,27 @@ else:
 
     st.markdown("---")
     
-    # --- CAMBIO AQUÍ: WIDGET DE "OLVIDÉ CONTRASEÑA" ---
-    try:
-        # Usamos solo 'location' y dejamos que el botón tenga el texto por defecto
-        if authenticator.forgot_password(location='main'):
-            
-            email_olvidado = st.session_state.email
-            
-            try:
-                # ¡¡IMPORTANTE!! DEBES CAMBIAR ESTO POR LA URL DE TU APP DE STREAMLIT
-                redirect_url = "https://chatbot-duoc1.streamlit.app" # Reemplaza con tu URL
-                
-                supabase.auth.reset_password_for_email(email_olvidado, options={
-                    'redirect_to': redirect_url
-                })
-                st.success("¡Email de recuperación enviado! Revisa tu bandeja de entrada.")
-                time.sleep(3)
-            except Exception as e:
-                st.error(f"Error al enviar el email: {e}")
+    # --- CAMBIO AQUÍ: WIDGET DE "OLVIDÉ CONTRASEÑA" PERSONALIZADO ---
+    st.subheader("¿Olvidaste tu contraseña?")
+    with st.form(key="forgot_password_form", clear_on_submit=True):
+        email_olvidado = st.text_input("Ingresa tu email de registro")
+        submit_button = st.form_submit_button(label="Enviar enlace de recuperación")
 
-    except Exception as e:
-        st.error(f"Error en el proceso de contraseña olvidada: {e}")
+        if submit_button:
+            if not email_olvidado:
+                st.error("Por favor, ingresa un email.")
+            else:
+                try:
+                    # ¡¡IMPORTANTE!! DEBES CAMBIAR ESTO POR LA URL DE TU APP
+                    redirect_url = "https.chatbot-duoc1.streamlit.app" # Reemplaza con tu URL
+                    
+                    supabase.auth.reset_password_for_email(email_olvidado, options={
+                        'redirect_to': redirect_url
+                    })
+                    st.success("¡Email de recuperación enviado! Revisa tu bandeja de entrada.")
+                    time.sleep(3)
+                except Exception as e:
+                    st.error(f"Error al enviar el email: {e}")
     # --- FIN DEL CAMBIO ---
 
 
