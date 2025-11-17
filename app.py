@@ -1,4 +1,4 @@
-# Versión 5.8 - Corregida la lógica de Logout (limpieza de sesión)
+# Versión 5.9 - Corregida la lógica de Logout (limpieza de sesión completa)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -147,12 +147,11 @@ if st.session_state["authentication_status"] is True:
         with col2:
             # --- CORRECCIÓN LÓGICA DE LOGOUT ---
             if st.button("Cerrar Sesión", use_container_width=True, key="logout_button_main"):
-                authenticator.logout() # Esto limpia la cookie y st.session_state
-                # Borramos manualmente las claves que creamos
-                if 'user_id' in st.session_state:
-                    del st.session_state.user_id
-                if 'messages' in st.session_state:
-                    del st.session_state.messages
+                authenticator.logout() # Esto setea el status a None y la cookie.
+                
+                # Borramos TODAS las claves de la sesión
+                st.session_state.clear()
+                
                 st.rerun() # Forzamos recarga
             # --- FIN DE LA CORRECCIÓN ---
         
