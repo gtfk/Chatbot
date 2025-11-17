@@ -1,4 +1,4 @@
-# Versión 7.0 - Logo Cuadrado Duoc UC
+# Versión 7.0 - Corregido el SyntaxError ("content':)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -20,7 +20,6 @@ from datetime import time as dt_time # Para comparar horarios
 
 # --- URLs DE LOGOS ---
 LOGO_BANNER_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/a/aa/Logo_DuocUC.svg/2560px-Logo_DuocUC.svg.png"
-# ¡NUEVA URL PARA EL LOGO CUADRADO DE DUOC UC!
 LOGO_ICON_URL = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSlve2kMlU53cq9Tl0DMxP0Ffo0JNap2dXq4q_uSdf4PyFZ9uraw7MU5irI6mA-HG8byNI&usqp=CAU"
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
@@ -182,7 +181,9 @@ if st.session_state["authentication_status"] is True:
             st.session_state.messages = []
             history = supabase.table('chat_history').select('role, message').eq('user_id', user_id).order('created_at').execute()
             for row in history.data:
-                st.session_state.messages.append({"role": row['role'], "content': row['message']})
+                # --- CORRECCIÓN DE TIPEO AQUÍ ---
+                st.session_state.messages.append({"role": row['role'], "content": row['message']})
+                # --- FIN DE LA CORRECCIÓN ---
             if not st.session_state.messages:
                 welcome_message = f"¡Hola {user_name}! Soy tu asistente del reglamento académico. ¿En qué te puedo ayudar hoy?"
                 st.session_state.messages.append({"role": "assistant", "content": welcome_message})
@@ -348,7 +349,7 @@ else:
     if st.session_state["authentication_status"] is False:
         st.error('Email o contraseña incorrecta')
     elif st.session_state["authentication_status"] is None:
-        st.info('Por favor, ingresa tu email y contraseña. ¿Nuevo usuario? Regístrate en la barra lateral.')
+        st.info('Por favor, ingresa tu email y contraseña. ¿Nuevo usuario? Registrate en la barra lateral.')
 
     st.markdown("---")
     st.subheader("¿Olvidaste tu contraseña?")
