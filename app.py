@@ -1,4 +1,4 @@
-# Versión 7.0 - Corregido el SyntaxError ("content':)
+# Versión 7.0 (Final) - Añadido Feedback (👍/👎) y "Contraseña Olvidada"
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -6,9 +6,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_community.retrievers import BM25Retriever
-# --- Importación Estándar para EnsembleRetriever (para versión 0.1.x) ---
 from langchain.retrievers import EnsembleRetriever
-# --- Fin ---
 from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
@@ -16,18 +14,14 @@ import os
 from supabase import create_client, Client
 import streamlit_authenticator as stauth
 import time
-from datetime import time as dt_time # Para comparar horarios
+from datetime import time as dt_time
+
+# --- CONFIGURACIÓN DE LA PÁGINA ---
+st.set_page_config(page_title="Asistente Académico Duoc UC", page_icon="🤖", layout="wide")
 
 # --- URLs DE LOGOS ---
 LOGO_BANNER_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/a/aa/Logo_DuocUC.svg/2560px-Logo_DuocUC.svg.png"
 LOGO_ICON_URL = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSlve2kMlU53cq9Tl0DMxP0Ffo0JNap2dXq4q_uSdf4PyFZ9uraw7MU5irI6mA-HG8byNI&usqp=CAU"
-
-# --- CONFIGURACIÓN DE LA PÁGINA ---
-st.set_page_config(
-    page_title="Chatbot Académico Duoc UC", 
-    page_icon=LOGO_ICON_URL, # Usamos el logo cuadrado como ícono de pestaña
-    layout="wide"
-)
 
 # --- CARGA DE CLAVES DE API ---
 GROQ_API_KEY = st.secrets.get("GROQ_API_KEY")
@@ -48,7 +42,7 @@ supabase = init_supabase_client()
 # --- CACHING DE RECURSOS DEL CHATBOT ---
 @st.cache_resource
 def inicializar_cadena():
-    # ... (Esta función es idéntica a la versión anterior, con el resumen predefinido) ...
+    # ... (Esta función es idéntica a la versión anterior) ...
     loader = PyPDFLoader("reglamento.pdf")
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
     docs = loader.load_and_split(text_splitter=text_splitter)
@@ -127,18 +121,15 @@ col_title1, col_title2 = st.columns([0.1, 0.9])
 with col_title1:
     st.image(LOGO_ICON_URL, width=70) # Usamos el logo cuadrado de Duoc UC
 with col_title2:
-    st.title("Chatbot Académico Duoc UC") 
-# --- FIN DEL CAMBIO ---
+    st.title("Asistente Académico Duoc UC") # Título ligeramente acortado
 
 # 3. Comprobar si el usuario ya está logueado
 if st.session_state["authentication_status"] is True:
     user_name = st.session_state["name"]
     user_email = st.session_state["username"]
     
-    # --- AÑADIR LOGO BANNER A LA SIDEBAR (LOGUEADO) ---
     st.sidebar.image(LOGO_BANNER_URL) 
     
-    # Cargar user_id en la sesión
     if 'user_id' not in st.session_state:
         user_id_response = supabase.table('profiles').select('id').eq('email', user_email).execute()
         if user_id_response.data:
@@ -168,7 +159,7 @@ if st.session_state["authentication_status"] is True:
             supabase.table('chat_history').delete().eq('user_id', user_id).execute()
             st.session_state.messages = []
             welcome_message = f"¡Hola {user_name}! Tu historial ha sido limpiado. ¿En qué te puedo ayudar?"
-            st.session_state.messages.append({"role": "assistant", "content": welcome_message})
+            st.session_state.messages.append({"role": "assistant", "content": welcome_message, "id": None}) # Añadimos un ID nulo para el saludo
             supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': welcome_message}).execute()
             st.rerun() 
         
@@ -179,74 +170,113 @@ if st.session_state["authentication_status"] is True:
         # Cargar historial de chat
         if "messages" not in st.session_state:
             st.session_state.messages = []
-            history = supabase.table('chat_history').select('role, message').eq('user_id', user_id).order('created_at').execute()
+            # --- CAMBIO AQUÍ: Cargamos el ID del mensaje ---
+            history = supabase.table('chat_history').select('id, role, message').eq('user_id', user_id).order('created_at').execute()
             for row in history.data:
-                # --- CORRECCIÓN DE TIPEO AQUÍ ---
-                st.session_state.messages.append({"role": row['role'], "content": row['message']})
-                # --- FIN DE LA CORRECCIÓN ---
+                st.session_state.messages.append({"id": row['id'], "role": row['role'], "content": row['message']})
+            # --- FIN DEL CAMBIO ---
+            
             if not st.session_state.messages:
                 welcome_message = f"¡Hola {user_name}! Soy tu asistente del reglamento académico. ¿En qué te puedo ayudar hoy?"
-                st.session_state.messages.append({"role": "assistant", "content": welcome_message})
-                supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': welcome_message}).execute()
+                # Guardamos el saludo y obtenemos su ID
+                response = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': welcome_message}).execute()
+                new_message_id = response.data[0]['id'] if response.data else None
+                st.session_state.messages.append({"id": new_message_id, "role": "assistant", "content": welcome_message})
 
         # Mostrar mensajes del historial
         for message in st.session_state.messages:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
+                
+                # --- CAMBIO AQUÍ: LÓGICA DE FEEDBACK ---
+                if message["role"] == "assistant" and message["id"] is not None:
+                    # Comprobar si ya existe feedback para este mensaje
+                    feedback_response = supabase.table('feedback').select('id, rating').eq('message_id', message['id']).execute()
+                    existing_feedback = feedback_response.data
+                    
+                    if not existing_feedback:
+                        # Si no hay feedback, mostrar botones
+                        col_fb1, col_fb2, col_fb_rest = st.columns([1, 1, 8])
+                        with col_fb1:
+                            if st.button("👍", key=f"up_{message['id']}", use_container_width=True):
+                                supabase.table('feedback').insert({
+                                    "message_id": message['id'],
+                                    "user_id": user_id,
+                                    "rating": "good"
+                                }).execute()
+                                st.toast("¡Gracias por tu feedback!")
+                                time.sleep(1)
+                                st.rerun()
+                        with col_fb2:
+                            if st.button("👎", key=f"down_{message['id']}", use_container_width=True):
+                                supabase.table('feedback').insert({
+                                    "message_id": message['id'],
+                                    "user_id": user_id,
+                                    "rating": "bad"
+                                }).execute()
+                                st.toast("¡Gracias! Tu feedback nos ayuda a mejorar.")
+                                time.sleep(1)
+                                st.rerun()
+                    else:
+                        # Si ya hay feedback, mostrar un mensaje de agradecimiento
+                        if existing_feedback[0]['rating'] == 'good':
+                            st.markdown("<span>Gracias por tu feedback 👍</span>", unsafe_allow_html=True)
+                        else:
+                            st.markdown("<span>Gracias por tu feedback 👎</span>", unsafe_allow_html=True)
+                # --- FIN DEL CAMBIO ---
 
         # Procesar nueva pregunta
         if prompt := st.chat_input("¿Qué duda tienes sobre el reglamento?"):
-            st.session_state.messages.append({"role": "user", "content": prompt})
+            user_message_data = {"role": "user", "content": prompt}
+            st.session_state.messages.append(user_message_data)
             with st.chat_message("user"):
                 st.markdown(prompt)
-            supabase.table('chat_history').insert({'user_id': user_id, 'role': 'user', 'message': prompt}).execute()
-
+            
+            # Guardamos el mensaje del usuario y obtenemos su ID
+            response_user_insert = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'user', 'message': prompt}).execute()
+            
             with st.chat_message("assistant"):
                 with st.spinner("Pensando... 💭"):
                     response = retrieval_chain.invoke({"input": prompt, "user_name": user_name })
                     respuesta_bot = response["answer"]
                     st.markdown(respuesta_bot)
-            st.session_state.messages.append({"role": "assistant", "content": respuesta_bot})
-            supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': respuesta_bot}).execute()
+            
+            # Guardamos la respuesta del bot y obtenemos su ID
+            response_bot_insert = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': respuesta_bot}).execute()
+            new_bot_message_id = response_bot_insert.data[0]['id'] if response_bot_insert.data else None
+            
+            # Actualizamos el estado de la sesión con el ID
+            st.session_state.messages.append({"id": new_bot_message_id, "role": "assistant", "content": respuesta_bot})
+            st.rerun() # Recargamos para mostrar los botones de feedback
 
     # --- PESTAÑA 2: INSCRIPCIÓN DE ASIGNATURAS ---
     with tab2:
+        # ... (Todo el código de la pestaña 2 es idéntico al anterior) ...
         st.header("Inscripción de Asignaturas")
         
-        # 1. Obtener el horario actual del usuario
         @st.cache_data(ttl=60) 
         def get_user_schedule(user_uuid):
             user_regs = supabase.table('registrations').select('section_id').eq('user_id', user_uuid).execute().data
-            if not user_regs:
-                return [], []
-            
+            if not user_regs: return [], []
             section_ids = [reg['section_id'] for reg in user_regs]
             schedule_data = supabase.table('sections').select('subject_id, day_of_week, start_time, end_time').in_('id', section_ids).execute().data
-            
             schedule = []
             registered_subject_ids = []
             for sec in schedule_data:
-                schedule.append({
-                    "day": sec['day_of_week'],
-                    "start": dt_time.fromisoformat(sec['start_time']),
-                    "end": dt_time.fromisoformat(sec['end_time'])
-                })
+                schedule.append({"day": sec['day_of_week'], "start": dt_time.fromisoformat(sec['start_time']), "end": dt_time.fromisoformat(sec['end_time'])})
                 registered_subject_ids.append(sec['subject_id'])
             return schedule, registered_subject_ids
 
-        # 2. Función para verificar el tope de horario
         def check_schedule_conflict(user_schedule, new_section):
             new_day = new_section['day_of_week']
             new_start = dt_time.fromisoformat(new_section['start_time'])
             new_end = dt_time.fromisoformat(new_section['end_time'])
-            
             for scheduled in user_schedule:
                 if scheduled['day'] == new_day:
                     if max(scheduled['start'], new_start) < min(scheduled['end'], new_end):
                         return True 
             return False 
 
-        # 3. Obtener todas las asignaturas disponibles
         @st.cache_data(ttl=300) 
         def get_all_subjects():
             subjects_response = supabase.table('subjects').select('id, name').order('name').execute()
@@ -261,7 +291,6 @@ if st.session_state["authentication_status"] is True:
             
             if selected_subject_name:
                 selected_subject_id = subjects_dict[selected_subject_name]
-                
                 sections_response = supabase.table('sections').select('*').eq('subject_id', selected_subject_id).execute()
                 sections = sections_response.data
                 
@@ -269,7 +298,6 @@ if st.session_state["authentication_status"] is True:
                     st.warning("No hay secciones disponibles para esta asignatura.")
                 else:
                     st.subheader(f"Secciones disponibles para {selected_subject_name}:")
-                    
                     user_schedule, registered_subject_ids = get_user_schedule(user_id)
                     
                     if selected_subject_id in registered_subject_ids:
@@ -277,7 +305,6 @@ if st.session_state["authentication_status"] is True:
                     else:
                         for sec in sections:
                             col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
-                            
                             registrations_count_response = supabase.table('registrations').select('id', count='exact').eq('section_id', sec['id']).execute()
                             registrations_count = registrations_count_response.count
                             cupos_disponibles = sec['capacity'] - (registrations_count if registrations_count else 0)
@@ -293,10 +320,7 @@ if st.session_state["authentication_status"] is True:
                                             st.error(f"¡Tope de horario! Ya tienes una clase el {sec['day_of_week']} a esa hora.")
                                         else:
                                             try:
-                                                supabase.table('registrations').insert({
-                                                    'user_id': user_id,
-                                                    'section_id': sec['id']
-                                                }).execute()
+                                                supabase.table('registrations').insert({'user_id': user_id, 'section_id': sec['id']}).execute()
                                                 st.success(f"¡Inscrito en la sección {sec['section_code']}!")
                                                 st.cache_data.clear() 
                                                 st.rerun()
@@ -305,36 +329,26 @@ if st.session_state["authentication_status"] is True:
                                 else:
                                     st.button("Llena", disabled=True, key=sec['id'])
 
-        # 9. Mostrar horario actual del usuario
         st.divider()
         st.subheader(f"Horario Actual de {user_name}")
-        
         current_schedule_info, _ = get_user_schedule(user_id) 
-        
         if not current_schedule_info:
             st.info("Aún no tienes asignaturas inscritas.")
         else:
-            all_regs_response = supabase.table('registrations').select(
-                'id, sections(subject_id, section_code, day_of_week, start_time, end_time, subjects(name))'
-            ).eq('user_id', user_id).execute()
-            
+            all_regs_response = supabase.table('registrations').select('id, sections(subject_id, section_code, day_of_week, start_time, end_time, subjects(name))').eq('user_id', user_id).execute()
             all_regs = all_regs_response.data
-
             col1, col2, col3, col4 = st.columns([3, 2, 2, 1])
             col1.write("**Asignatura**")
             col2.write("**Día**")
             col3.write("**Horario**")
             col4.write("**Acción**")
-
             for reg in all_regs:
                 sec = reg['sections']
                 if sec and sec['subjects']:
                     col1, col2, col3, col4 = st.columns([3, 2, 2, 1])
-                    
                     col1.write(f"{sec['subjects']['name']} (Sección {sec['section_code']})")
                     col2.write(sec['day_of_week'])
                     col3.write(f"{sec['start_time']} - {sec['end_time']}")
-                    
                     with col4:
                         if st.button("Anular", key=f"del_{reg['id']}", type="primary", use_container_width=True):
                             supabase.table('registrations').delete().eq('id', reg['id']).execute()
@@ -344,6 +358,7 @@ if st.session_state["authentication_status"] is True:
 
 # 4. Si el usuario NO está logueado, mostrar Login y Registro
 else:
+    # --- Formulario de Login (en la página principal) ---
     authenticator.login(location='main')
     
     if st.session_state["authentication_status"] is False:
@@ -352,17 +367,31 @@ else:
         st.info('Por favor, ingresa tu email y contraseña. ¿Nuevo usuario? Registrate en la barra lateral.')
 
     st.markdown("---")
-    st.subheader("¿Olvidaste tu contraseña?")
-    st.markdown("""
-    Debido a que este es un sistema auto-gestionado, no hay un reseteo de contraseña automático.
     
-    **Solución:** Pídele al administrador del proyecto que **borre tu usuario**
-    desde la tabla `profiles` en **Supabase**. Una vez borrado, podrás registrarte de nuevo con el mismo email.
-    """)
+    # --- CAMBIO AQUÍ: WIDGET DE "OLVIDÉ CONTRASEÑA" ---
+    try:
+        if authenticator.forgot_password("¿Olvidaste tu contraseña?", location='main'):
+            # Esta función devuelve True si se envió el email
+            
+            # Obtenemos el email que el usuario ingresó
+            email_olvidado = st.session_state.email
+            
+            # Usamos la función nativa de Supabase para enviar el email
+            # ¡Asegúrate de haber habilitado la plantilla en Supabase!
+            try:
+                supabase.auth.reset_password_for_email(email_olvidado)
+                st.success("¡Email de recuperación enviado! Revisa tu bandeja de entrada.")
+                time.sleep(3)
+            except Exception as e:
+                st.error(f"Error al enviar el email: {e}")
+
+    except Exception as e:
+        st.error(f"Error en el proceso de contraseña olvidada: {e}")
+    # --- FIN DEL CAMBIO ---
+
 
     # --- FORMULARIO DE REGISTRO PERSONALIZADO (en la barra lateral) ---
     with st.sidebar:
-        # --- AÑADIR LOGO BANNER A LA SIDEBAR (LOGOUT) ---
         st.image(LOGO_BANNER_URL) # Usamos el banner aquí
         st.subheader("¿Nuevo Usuario? Regístrate")
         with st.form(key="register_form", clear_on_submit=True):
