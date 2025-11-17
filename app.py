@@ -1,4 +1,4 @@
-# Versión 7.1 - Corregido el argumento de forgot_password()
+# Versión 7.2 (Estable) - Corregido el argumento de forgot_password()
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -223,7 +223,6 @@ if st.session_state["authentication_status"] is True:
                             st.markdown("<span>Gracias por tu feedback 👍</span>", unsafe_allow_html=True)
                         else:
                             st.markdown("<span>Gracias por tu feedback 👎</span>", unsafe_allow_html=True)
-                # --- FIN DEL CAMBIO ---
 
         # Procesar nueva pregunta
         if prompt := st.chat_input("¿Qué duda tienes sobre el reglamento?"):
@@ -367,17 +366,18 @@ else:
     
     # --- CAMBIO AQUÍ: WIDGET DE "OLVIDÉ CONTRASEÑA" ---
     try:
-        # Usamos 'button_name' para el texto y 'location' para la ubicación
-        if authenticator.forgot_password(button_name="¿Olvidaste tu contraseña?", location='main'):
-            # Esta función devuelve True si se envió el email
+        # Usamos el primer argumento posicional para el texto del botón/enlace
+        if authenticator.forgot_password("¿Olvidaste tu contraseña?", location='main'):
             
-            # Obtenemos el email que el usuario ingresó
             email_olvidado = st.session_state.email
             
-            # Usamos la función nativa de Supabase para enviar el email
             try:
+                # URL a la que volverá el usuario después de hacer clic en el email
+                # ¡DEBES CAMBIAR ESTO POR LA URL DE TU APP DE STREAMLIT!
+                redirect_url = "https://chatbot-duoc.streamlit.app" 
+                
                 supabase.auth.reset_password_for_email(email_olvidado, options={
-                    'redirect_to': 'https://chatbot-duoc.streamlit.app' # URL a donde volverá el usuario
+                    'redirect_to': redirect_url
                 })
                 st.success("¡Email de recuperación enviado! Revisa tu bandeja de entrada.")
                 time.sleep(3)
