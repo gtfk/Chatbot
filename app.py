@@ -1,4 +1,4 @@
-# Versión 7.0 - Agente de LangChain (RAG + Inscripción)
+# Versión 7.1 - Corregido el error de Pydantic v1 usando el decorador @tool
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -11,9 +11,10 @@ from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
 # Importaciones clave para el Agente
-from langchain.agents import AgentExecutor, create_react_agent, Tool
+from langchain.agents import AgentExecutor, create_react_agent
+# --- CAMBIO AQUÍ: Importamos 'tool' en lugar de 'Tool', 'BaseModel', 'Field' ---
 from langchain_core.tools import tool
-from pydantic import BaseModel, Field
+# --- FIN DEL CAMBIO ---
 
 import os
 from supabase import create_client, Client
@@ -41,23 +42,18 @@ def init_supabase_client():
 supabase = init_supabase_client()
 
 # --- CACHING DE RECURSOS DEL CHATBOT ---
-# Esta función ahora solo prepara los componentes caros (LLM y Retriever)
 @st.cache_resource
 def inicializar_componentes():
-    # --- 1. Cargar y Procesar el PDF ---
+    # ... (Esta función es idéntica a la versión anterior) ...
     loader = PyPDFLoader("reglamento.pdf")
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
     docs = loader.load_and_split(text_splitter=text_splitter)
-
-    # --- 2. Crear los Embeddings y el Ensemble Retriever ---
     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
     vector_store = Chroma.from_documents(docs, embeddings)
     vector_retriever = vector_store.as_retriever(search_kwargs={"k": 7})
     bm25_retriever = BM25Retriever.from_documents(docs)
     bm25_retriever.k = 7
     retriever = EnsembleRetriever(retrievers=[bm25_retriever, vector_retriever], weights=[0.7, 0.3])
-
-    # --- 3. Conectarse al Modelo en Groq Cloud ---
     llm = ChatGroq(api_key=GROQ_API_KEY, model="llama-3.1-8b-instant", temperature=0.1)
     
     return llm, retriever
@@ -129,10 +125,9 @@ if st.session_state["authentication_status"] is True:
     st.divider()
 
     # --- INICIALIZACIÓN DEL AGENTE Y HERRAMIENTAS ---
-    # Cargamos los componentes caros (LLM y Retriever) desde el caché
     llm, retriever = inicializar_componentes()
 
-    # --- Definición de Herramientas ---
+    # --- Definición de Herramientas (Usando @tool) ---
     
     # Herramienta 1: Buscador de Reglamento (RAG)
     rag_prompt_template = """
@@ -167,14 +162,14 @@ if st.session_state["authentication_status"] is True:
     document_chain = create_stuff_documents_chain(llm, rag_prompt)
     retrieval_chain = create_retrieval_chain(retriever, document_chain)
 
-    # Envolvemos la cadena en una función simple para la herramienta
+    @tool
     def run_rag_chain(query: str) -> str:
-        """Responde preguntas sobre el reglamento académico."""
+        """Responde preguntas específicas sobre el reglamento académico, artículos, normas, asistencia, y preguntas generales de 'alumno nuevo'."""
         response = retrieval_chain.invoke({"input": query, "user_name": user_name})
         return response["answer"]
 
     # Herramienta 2: Buscador de Asignaturas
-    def get_user_schedule(user_uuid):
+    def get_user_schedule(user_uuid): # Esta es una función auxiliar, no una herramienta
         user_regs = supabase.table('registrations').select('section_id').eq('user_id', user_uuid).execute().data
         if not user_regs: return [], []
         section_ids = [reg['section_id'] for reg in user_regs]
@@ -190,27 +185,24 @@ if st.session_state["authentication_status"] is True:
             registered_subject_ids.append(sec['subject_id'])
         return schedule, registered_subject_ids
 
+    @tool
     def buscar_asignaturas(nombre_asignatura: str) -> str:
-        """Busca secciones disponibles para una asignatura, verificando cupos y si el usuario ya la inscribió."""
+        """Busca secciones disponibles para una asignatura, verificando cupos y si el usuario ya la inscribió. La entrada es el nombre de la asignatura (ej. 'Matemáticas I')."""
         try:
-            # 1. Buscar el ID de la asignatura
             subject_response = supabase.table('subjects').select('id').ilike('name', f'%{nombre_asignatura}%').execute()
             if not subject_response.data:
                 return f"Lo siento {user_name}, no encontré ninguna asignatura con el nombre '{nombre_asignatura}'."
             
             selected_subject_id = subject_response.data[0]['id']
             
-            # 2. Verificar si el usuario ya la inscribió
             _ , registered_subject_ids = get_user_schedule(user_id)
             if selected_subject_id in registered_subject_ids:
                 return f"{user_name}, ya tienes esa asignatura inscrita en otra sección. Debes anularla primero si quieres cambiarla."
 
-            # 3. Buscar secciones disponibles
             sections_response = supabase.table('sections').select('*').eq('subject_id', selected_subject_id).execute()
             if not sections_response.data:
                 return f"No hay secciones disponibles para '{nombre_asignatura}' en este momento."
 
-            # 4. Formatear la respuesta
             respuesta = f"¡Claro, {user_name}! Encontré estas secciones para '{nombre_asignatura}':\n"
             secciones_encontradas = 0
             
@@ -233,25 +225,20 @@ if st.session_state["authentication_status"] is True:
             return f"Error al buscar asignaturas: {e}"
 
     # Herramienta 3: Inscriptor de Asignaturas
-    class InscribirInput(BaseModel):
-        section_code: str = Field(description="El código de la sección a inscribir, por ejemplo '001D' o '002D'")
-
+    @tool
     def inscribir_asignatura(section_code: str) -> str:
-        """Inscribe al usuario en una sección específica, validando cupos y tope de horario."""
+        """Inscribe al usuario en una sección de una asignatura. La entrada es el código de la sección (ej. '001D')."""
         try:
-            # 1. Encontrar la sección
             section_response = supabase.table('sections').select('*').eq('section_code', section_code.upper()).execute()
             if not section_response.data:
                 return f"No pude encontrar la sección '{section_code}'. Por favor, verifica el código."
             
             section_to_register = section_response.data[0]
             
-            # 2. Verificar si la asignatura ya está inscrita
             user_schedule, registered_subject_ids = get_user_schedule(user_id)
             if section_to_register['subject_id'] in registered_subject_ids:
                 return f"Error: Ya tienes esta asignatura inscrita en otra sección. Debes anularla primero."
             
-            # 3. Verificar cupos
             registrations_count_response = supabase.table('registrations').select('id', count='exact').eq('section_id', section_to_register['id']).execute()
             registrations_count = registrations_count_response.count
             cupos_disponibles = section_to_register['capacity'] - (registrations_count if registrations_count else 0)
@@ -259,7 +246,6 @@ if st.session_state["authentication_status"] is True:
             if cupos_disponibles <= 0:
                 return f"Lo siento, {user_name}, la sección {section_code} se acaba de llenar. No quedan cupos."
             
-            # 4. Verificar tope de horario
             def check_schedule_conflict(user_schedule, new_section):
                 new_day = new_section['day_of_week']
                 new_start = dt_time.fromisoformat(new_section['start_time'])
@@ -273,7 +259,6 @@ if st.session_state["authentication_status"] is True:
             if check_schedule_conflict(user_schedule, section_to_register):
                 return f"¡Error! La sección {section_code} ({section_to_register['day_of_week']} {section_to_register['start_time']}) tiene un tope de horario con otra asignatura que ya tienes."
 
-            # 5. Inscribir
             supabase.table('registrations').insert({
                 'user_id': user_id,
                 'section_id': section_to_register['id']
@@ -285,26 +270,15 @@ if st.session_state["authentication_status"] is True:
             return f"Error al inscribir: {e}"
 
     # --- Creación del Agente ---
+    # --- CAMBIO AQUÍ: La lista de 'tools' es ahora la lista de funciones decoradas ---
     tools = [
-        Tool(
-            name="BuscadorDeReglamento",
-            func=run_rag_chain,
-            description="Útil para responder preguntas específicas sobre el reglamento académico, artículos, normas, asistencia, y preguntas generales de 'alumno nuevo'."
-        ),
-        Tool(
-            name="BuscadorDeAsignaturas",
-            func=buscar_asignaturas,
-            description="Útil para buscar qué secciones, horarios y cupos hay disponibles para una asignatura. La entrada es el nombre de la asignatura (ej. 'Matemáticas I')."
-        ),
-        Tool(
-            name="InscriptorDeAsignaturas",
-            func=inscribir_asignatura,
-            description="Útil para inscribir al usuario en una sección de una asignatura. La entrada es el código de la sección (ej. '001D').",
-            args_schema=InscribirInput
-        ),
+        run_rag_chain,
+        buscar_asignaturas,
+        inscribir_asignatura,
     ]
 
     # Prompt del Agente (en español)
+    # --- CAMBIO AQUÍ: Actualizamos los nombres de las herramientas para que coincidan con los nombres de las funciones ---
     agent_prompt_template = """
     INSTRUCCIÓN PRINCIPAL: Responde SIEMPRE en español, con un tono amigable y cercano.
     
@@ -312,9 +286,9 @@ if st.session_state["authentication_status"] is True:
     
     REGLAS DE RAZONAMIENTO:
     1.  Tu trabajo es entender la intención del usuario y usar la herramienta correcta.
-    2.  Si la pregunta es sobre el reglamento (asistencia, notas, artículos, alumno nuevo), usa "BuscadorDeReglamento".
-    3.  Si el usuario quiere SABER sobre asignaturas (ej. "qué secciones hay de cálculo"), usa "BuscadorDeAsignaturas".
-    4.  Si el usuario quiere INSCRIBIR una sección (ej. "inscríbeme en la 001D"), usa "InscriptorDeAsignaturas".
+    2.  Si la pregunta es sobre el reglamento (asistencia, notas, artículos, alumno nuevo), usa "run_rag_chain".
+    3.  Si el usuario quiere SABER sobre asignaturas (ej. "qué secciones hay de cálculo"), usa "buscar_asignaturas".
+    4.  Si el usuario quiere INSCRIBIR una sección (ej. "inscríbeme en la 001D"), usa "inscribir_asignatura".
     5.  Dirígete a {user_name} por su nombre.
 
     HERRAMIENTAS DISPONIBLES:
@@ -325,7 +299,7 @@ if st.session_state["authentication_status"] is True:
     Pregunta: la pregunta original que debes responder
     Pensamiento: siempre debes pensar qué hacer a continuación
     Acción: la acción a tomar, debe ser una de [{tool_names}]
-    Entrada de la Acción: la entrada para la acción (si es InscriptorDeAsignaturas, debe ser solo el código de sección)
+    Entrada de la Acción: la entrada para la acción (si es inscribir_asignatura, debe ser solo el código de sección)
     Observación: el resultado de la acción
     ... (este patrón de Pensamiento/Acción/Entrada de la Acción/Observación puede repetirse N veces)
     Pensamiento: Ahora sé la respuesta final.
