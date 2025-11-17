@@ -1,4 +1,4 @@
-# Versión 6.3 (Estable) - Chatbot + Inscripción + Logout Corregido
+# Versión 6.5 - Añadido logo desde URL
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -37,26 +37,23 @@ def init_supabase_client():
 
 supabase = init_supabase_client()
 
+# --- URL DEL LOGO ---
+LOGO_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/a/aa/Logo_DuocUC.svg/2560px-Logo_DuocUC.svg.png"
+
 # --- CACHING DE RECURSOS DEL CHATBOT ---
 @st.cache_resource
 def inicializar_cadena():
-    # --- 1. Cargar y Procesar el PDF ---
+    # ... (Esta función es idéntica a la versión anterior, con el resumen predefinido) ...
     loader = PyPDFLoader("reglamento.pdf")
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
     docs = loader.load_and_split(text_splitter=text_splitter)
-
-    # --- 2. Crear los Embeddings y el Ensemble Retriever ---
     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
     vector_store = Chroma.from_documents(docs, embeddings)
     vector_retriever = vector_store.as_retriever(search_kwargs={"k": 7})
     bm25_retriever = BM25Retriever.from_documents(docs)
     bm25_retriever.k = 7
     retriever = EnsembleRetriever(retrievers=[bm25_retriever, vector_retriever], weights=[0.7, 0.3])
-
-    # --- 3. Conectarse al Modelo en Groq Cloud ---
     llm = ChatGroq(api_key=GROQ_API_KEY, model="llama-3.1-8b-instant", temperature=0.1)
-
-    # --- 4. Crear la Cadena de Conversación (con respuesta predefinida) ---
     prompt_template = """
     INSTRUCCIÓN PRINCIPAL: Responde SIEMPRE en español, con un tono amigable y cercano.
     PERSONAJE: Eres un asistente experto en el reglamento académico de Duoc UC. Estás hablando con un estudiante llamado {user_name}.
@@ -126,6 +123,9 @@ if st.session_state["authentication_status"] is True:
     user_name = st.session_state["name"]
     user_email = st.session_state["username"]
     
+    # --- AÑADIR LOGO A LA SIDEBAR (LOGUEADO) ---
+    st.sidebar.image(LOGO_URL)
+    
     # Cargar user_id en la sesión
     if 'user_id' not in st.session_state:
         user_id_response = supabase.table('profiles').select('id').eq('email', user_email).execute()
@@ -142,11 +142,10 @@ if st.session_state["authentication_status"] is True:
     with col1:
         st.caption(f"Conectado como: {user_name} ({user_email})")
     with col2:
-        # Lógica de Logout corregida
         if st.button("Cerrar Sesión", use_container_width=True, key="logout_button_global"):
-            authenticator.logout() # Borra la cookie
-            st.session_state.clear() # Borra la memoria de Streamlit
-            st.rerun() # Recarga la página
+            authenticator.logout()
+            st.session_state.clear()
+            st.rerun()
 
     # --- NAVEGACIÓN PRINCIPAL (PESTAÑAS) ---
     tab1, tab2 = st.tabs(["Chatbot de Reglamento", "Inscripción de Asignaturas"])
@@ -349,7 +348,8 @@ else:
 
     # --- FORMULARIO DE REGISTRO PERSONALIZADO (en la barra lateral) ---
     with st.sidebar:
-        st.image("logo.png") # Logo en la sidebar del login
+        # --- AÑADIR LOGO A LA SIDEBAR (LOGOUT) ---
+        st.image(LOGO_URL)
         st.subheader("¿Nuevo Usuario? Regístrate")
         with st.form(key="register_form", clear_on_submit=True):
             name_reg = st.text_input("Nombre Completo")
