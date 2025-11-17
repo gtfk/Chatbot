@@ -385,22 +385,3 @@ else:
                             st.error("Error: Ese email ya está registrado.")
                         else:
                             st.error(f"Error en el registro: {e}")
-```
-
-### 2. Tu `requirements.txt` (El Archivo Clave)
-
-Asegúrate de que tu `requirements.txt` sea el de las **versiones fijadas (pinned)**, que es el que funciona con el código de arriba:
-
-```
-streamlit
-langchain-core==0.1.52
-langchain==0.1.20
-langchain-community==0.0.38
-langchain_groq==0.1.3
-langchain_text_splitters==0.0.1
-pypdf
-chromadb
-sentence-transformers
-rank_bm25
-supabase
-streamlit-authenticator
