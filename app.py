@@ -1,4 +1,4 @@
-# Versión 7.0 (Final) - Añadido Feedback (👍/👎) y "Contraseña Olvidada"
+# Versión 7.1 - Corregido el argumento de forgot_password()
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -6,7 +6,9 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_community.retrievers import BM25Retriever
+# --- Importación Estándar para EnsembleRetriever (para versión 0.1.x) ---
 from langchain.retrievers import EnsembleRetriever
+# --- Fin ---
 from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
@@ -16,12 +18,16 @@ import streamlit_authenticator as stauth
 import time
 from datetime import time as dt_time
 
-# --- CONFIGURACIÓN DE LA PÁGINA ---
-st.set_page_config(page_title="Asistente Académico Duoc UC", page_icon="🤖", layout="wide")
-
 # --- URLs DE LOGOS ---
 LOGO_BANNER_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/a/aa/Logo_DuocUC.svg/2560px-Logo_DuocUC.svg.png"
 LOGO_ICON_URL = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSlve2kMlU53cq9Tl0DMxP0Ffo0JNap2dXq4q_uSdf4PyFZ9uraw7MU5irI6mA-HG8byNI&usqp=CAU"
+
+# --- CONFIGURACIÓN DE LA PÁGINA ---
+st.set_page_config(
+    page_title="Chatbot Académico Duoc UC", 
+    page_icon=LOGO_ICON_URL, # Usamos el logo cuadrado como ícono de pestaña
+    layout="wide"
+)
 
 # --- CARGA DE CLAVES DE API ---
 GROQ_API_KEY = st.secrets.get("GROQ_API_KEY")
@@ -170,15 +176,12 @@ if st.session_state["authentication_status"] is True:
         # Cargar historial de chat
         if "messages" not in st.session_state:
             st.session_state.messages = []
-            # --- CAMBIO AQUÍ: Cargamos el ID del mensaje ---
             history = supabase.table('chat_history').select('id, role, message').eq('user_id', user_id).order('created_at').execute()
             for row in history.data:
                 st.session_state.messages.append({"id": row['id'], "role": row['role'], "content": row['message']})
-            # --- FIN DEL CAMBIO ---
             
             if not st.session_state.messages:
                 welcome_message = f"¡Hola {user_name}! Soy tu asistente del reglamento académico. ¿En qué te puedo ayudar hoy?"
-                # Guardamos el saludo y obtenemos su ID
                 response = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': welcome_message}).execute()
                 new_message_id = response.data[0]['id'] if response.data else None
                 st.session_state.messages.append({"id": new_message_id, "role": "assistant", "content": welcome_message})
@@ -188,14 +191,12 @@ if st.session_state["authentication_status"] is True:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
                 
-                # --- CAMBIO AQUÍ: LÓGICA DE FEEDBACK ---
+                # --- LÓGICA DE FEEDBACK ---
                 if message["role"] == "assistant" and message["id"] is not None:
-                    # Comprobar si ya existe feedback para este mensaje
                     feedback_response = supabase.table('feedback').select('id, rating').eq('message_id', message['id']).execute()
                     existing_feedback = feedback_response.data
                     
                     if not existing_feedback:
-                        # Si no hay feedback, mostrar botones
                         col_fb1, col_fb2, col_fb_rest = st.columns([1, 1, 8])
                         with col_fb1:
                             if st.button("👍", key=f"up_{message['id']}", use_container_width=True):
@@ -218,7 +219,6 @@ if st.session_state["authentication_status"] is True:
                                 time.sleep(1)
                                 st.rerun()
                     else:
-                        # Si ya hay feedback, mostrar un mensaje de agradecimiento
                         if existing_feedback[0]['rating'] == 'good':
                             st.markdown("<span>Gracias por tu feedback 👍</span>", unsafe_allow_html=True)
                         else:
@@ -232,7 +232,6 @@ if st.session_state["authentication_status"] is True:
             with st.chat_message("user"):
                 st.markdown(prompt)
             
-            # Guardamos el mensaje del usuario y obtenemos su ID
             response_user_insert = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'user', 'message': prompt}).execute()
             
             with st.chat_message("assistant"):
@@ -241,11 +240,9 @@ if st.session_state["authentication_status"] is True:
                     respuesta_bot = response["answer"]
                     st.markdown(respuesta_bot)
             
-            # Guardamos la respuesta del bot y obtenemos su ID
             response_bot_insert = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': respuesta_bot}).execute()
             new_bot_message_id = response_bot_insert.data[0]['id'] if response_bot_insert.data else None
             
-            # Actualizamos el estado de la sesión con el ID
             st.session_state.messages.append({"id": new_bot_message_id, "role": "assistant", "content": respuesta_bot})
             st.rerun() # Recargamos para mostrar los botones de feedback
 
@@ -370,16 +367,18 @@ else:
     
     # --- CAMBIO AQUÍ: WIDGET DE "OLVIDÉ CONTRASEÑA" ---
     try:
-        if authenticator.forgot_password("¿Olvidaste tu contraseña?", location='main'):
+        # Usamos 'button_name' para el texto y 'location' para la ubicación
+        if authenticator.forgot_password(button_name="¿Olvidaste tu contraseña?", location='main'):
             # Esta función devuelve True si se envió el email
             
             # Obtenemos el email que el usuario ingresó
             email_olvidado = st.session_state.email
             
             # Usamos la función nativa de Supabase para enviar el email
-            # ¡Asegúrate de haber habilitado la plantilla en Supabase!
             try:
-                supabase.auth.reset_password_for_email(email_olvidado)
+                supabase.auth.reset_password_for_email(email_olvidado, options={
+                    'redirect_to': 'https://chatbot-duoc.streamlit.app' # URL a donde volverá el usuario
+                })
                 st.success("¡Email de recuperación enviado! Revisa tu bandeja de entrada.")
                 time.sleep(3)
             except Exception as e:
