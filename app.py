@@ -1,4 +1,4 @@
-# Versión 5.7 - Añadida Inscripción de Asignaturas
+# Versión 5.8 - Corregida la lógica de Logout (limpieza de sesión)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -38,23 +38,17 @@ supabase = init_supabase_client()
 # --- CACHING DE RECURSOS DEL CHATBOT ---
 @st.cache_resource
 def inicializar_cadena():
-    # --- 1. Cargar y Procesar el PDF ---
+    # ... (Esta función es idéntica a la versión anterior) ...
     loader = PyPDFLoader("reglamento.pdf")
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
     docs = loader.load_and_split(text_splitter=text_splitter)
-
-    # --- 2. Crear los Embeddings y el Ensemble Retriever ---
     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
     vector_store = Chroma.from_documents(docs, embeddings)
     vector_retriever = vector_store.as_retriever(search_kwargs={"k": 7})
     bm25_retriever = BM25Retriever.from_documents(docs)
     bm25_retriever.k = 7
     retriever = EnsembleRetriever(retrievers=[bm25_retriever, vector_retriever], weights=[0.7, 0.3])
-
-    # --- 3. Conectarse al Modelo en Groq Cloud ---
     llm = ChatGroq(api_key=GROQ_API_KEY, model="llama-3.1-8b-instant", temperature=0.1)
-
-    # --- 4. Crear la Cadena de Conversación (con respuesta predefinida) ---
     prompt_template = """
     INSTRUCCIÓN PRINCIPAL: Responde SIEMPRE en español, con un tono amigable y cercano.
     PERSONAJE: Eres un asistente experto en el reglamento académico de Duoc UC. Estás hablando con un estudiante llamado {user_name}.
@@ -117,7 +111,7 @@ authenticator = stauth.Authenticate(
 )
 
 # --- INICIO DE LA LÓGICA DE LA APLICACIÓN ---
-st.title("🤖 Chatbot Académico Duoc UC")
+st.title("🤖 Chatbot del Reglamento Académico")
 
 # 3. Comprobar si el usuario ya está logueado
 if st.session_state["authentication_status"] is True:
@@ -151,7 +145,16 @@ if st.session_state["authentication_status"] is True:
                 supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': welcome_message}).execute()
                 st.rerun() 
         with col2:
-            authenticator.logout(button_name='Cerrar Sesión', location='main', key='logout_button')
+            # --- CORRECCIÓN LÓGICA DE LOGOUT ---
+            if st.button("Cerrar Sesión", use_container_width=True, key="logout_button_main"):
+                authenticator.logout() # Esto limpia la cookie y st.session_state
+                # Borramos manualmente las claves que creamos
+                if 'user_id' in st.session_state:
+                    del st.session_state.user_id
+                if 'messages' in st.session_state:
+                    del st.session_state.messages
+                st.rerun() # Forzamos recarga
+            # --- FIN DE LA CORRECCIÓN ---
         
         retrieval_chain = inicializar_cadena()
 
@@ -190,20 +193,16 @@ if st.session_state["authentication_status"] is True:
     with tab2:
         st.header("Inscripción de Asignaturas")
         
-        # --- LÓGICA DE INSCRIPCIÓN ---
-        
         # 1. Obtener el horario actual del usuario
-        @st.cache_data(ttl=60) # Cachear el horario por 60 segundos
+        @st.cache_data(ttl=60) 
         def get_user_schedule(user_uuid):
             user_regs = supabase.table('registrations').select('section_id').eq('user_id', user_uuid).execute().data
             if not user_regs:
                 return [], []
             
             section_ids = [reg['section_id'] for reg in user_regs]
-            # Obtener los detalles de las secciones inscritas
             schedule_data = supabase.table('sections').select('subject_id, day_of_week, start_time, end_time').in_('id', section_ids).execute().data
             
-            # Convertir a un formato fácil de usar
             schedule = []
             registered_subject_ids = []
             for sec in schedule_data:
@@ -223,13 +222,12 @@ if st.session_state["authentication_status"] is True:
             
             for scheduled in user_schedule:
                 if scheduled['day'] == new_day:
-                    # Lógica de superposición de tiempo
                     if max(scheduled['start'], new_start) < min(scheduled['end'], new_end):
-                        return True # Hay tope
-            return False # No hay tope
+                        return True 
+            return False 
 
         # 3. Obtener todas las asignaturas disponibles
-        @st.cache_data(ttl=300) # Cachear asignaturas por 5 minutos
+        @st.cache_data(ttl=300) 
         def get_all_subjects():
             subjects_response = supabase.table('subjects').select('id, name').order('name').execute()
             return {subj['name']: subj['id'] for subj in subjects_response.data}
@@ -244,7 +242,6 @@ if st.session_state["authentication_status"] is True:
             if selected_subject_name:
                 selected_subject_id = subjects_dict[selected_subject_name]
                 
-                # 4. Obtener secciones para la asignatura seleccionada
                 sections_response = supabase.table('sections').select('*').eq('subject_id', selected_subject_id).execute()
                 sections = sections_response.data
                 
@@ -255,15 +252,12 @@ if st.session_state["authentication_status"] is True:
                     
                     user_schedule, registered_subject_ids = get_user_schedule(user_id)
                     
-                    # 5. Verificar si la asignatura ya está inscrita
                     if selected_subject_id in registered_subject_ids:
                         st.error("Ya tienes esta asignatura inscrita en otra sección.")
                     else:
-                        # 6. Mostrar secciones y botón de inscribir
                         for sec in sections:
                             col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
                             
-                            # 7. Contar cupos
                             registrations_count_response = supabase.table('registrations').select('id', count='exact').eq('section_id', sec['id']).execute()
                             registrations_count = registrations_count_response.count
                             cupos_disponibles = sec['capacity'] - (registrations_count if registrations_count else 0)
@@ -273,22 +267,19 @@ if st.session_state["authentication_status"] is True:
                             col3.text(f"{cupos_disponibles} de {sec['capacity']} cupos disponibles")
                             
                             with col4:
-                                # 8. Lógica del botón Inscribir
                                 if cupos_disponibles > 0:
                                     if st.button("Inscribir", key=sec['id']):
-                                        # 8a. Verificar tope de horario
                                         if check_schedule_conflict(user_schedule, sec):
                                             st.error(f"¡Tope de horario! Ya tienes una clase el {sec['day_of_week']} a esa hora.")
                                         else:
-                                            # 8b. Inscribir
                                             try:
                                                 supabase.table('registrations').insert({
                                                     'user_id': user_id,
                                                     'section_id': sec['id']
                                                 }).execute()
                                                 st.success(f"¡Inscrito en la sección {sec['section_code']}!")
-                                                st.cache_data.clear() # Limpiar el caché de datos
-                                                st.rerun() # Recargar la página para actualizar el horario
+                                                st.cache_data.clear() 
+                                                st.rerun()
                                             except Exception as e:
                                                 st.error(f"Error al inscribir: {e}")
                                 else:
@@ -298,20 +289,18 @@ if st.session_state["authentication_status"] is True:
         st.divider()
         st.subheader(f"Horario Actual de {user_name}")
         
-        # Usamos la función cacheada
         current_schedule_info, _ = get_user_schedule(user_id) 
         
         if not current_schedule_info:
             st.info("Aún no tienes asignaturas inscritas.")
         else:
-            # Re-consultamos los datos completos para mostrar la tabla
             all_regs_response = supabase.table('registrations').select('sections(subject_id, section_code, day_of_week, start_time, end_time, subjects(name))').eq('user_id', user_id).execute()
             all_regs = all_regs_response.data
             
             schedule_display = []
             for reg in all_regs:
                 sec = reg['sections']
-                if sec and sec['subjects']: # Verificación extra por si hay datos incompletos
+                if sec and sec['subjects']: 
                     schedule_display.append({
                         "Asignatura": sec['subjects']['name'],
                         "Sección": sec['section_code'],
@@ -320,7 +309,6 @@ if st.session_state["authentication_status"] is True:
                     })
             
             st.dataframe(schedule_display, use_container_width=True)
-
 
 # 4. Si el usuario NO está logueado, mostrar Login y Registro
 else:
