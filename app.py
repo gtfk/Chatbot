@@ -1,4 +1,4 @@
-# Versión 7.2 (Estable) - Corregido el argumento de forgot_password()
+# Versión 7.3 (Estable) - Corregido el argumento de forgot_password()
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -366,15 +366,14 @@ else:
     
     # --- CAMBIO AQUÍ: WIDGET DE "OLVIDÉ CONTRASEÑA" ---
     try:
-        # Usamos el primer argumento posicional para el texto del botón/enlace
-        if authenticator.forgot_password("¿Olvidaste tu contraseña?", location='main'):
+        # Usamos 'form_name' para el texto y 'location' para la ubicación
+        if authenticator.forgot_password(form_name="¿Olvidaste tu contraseña?", location='main'):
             
             email_olvidado = st.session_state.email
             
             try:
-                # URL a la que volverá el usuario después de hacer clic en el email
-                # ¡DEBES CAMBIAR ESTO POR LA URL DE TU APP DE STREAMLIT!
-                redirect_url = "https://chatbot-duoc.streamlit.app" 
+                # ¡¡IMPORTANTE!! DEBES CAMBIAR ESTO POR LA URL DE TU APP DE STREAMLIT
+                redirect_url = "https://chatbot-duoc1.streamlit.app" 
                 
                 supabase.auth.reset_password_for_email(email_olvidado, options={
                     'redirect_to': redirect_url
