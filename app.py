@@ -1,4 +1,4 @@
-# Versión 7.3 (Estable) - Corregido el argumento de forgot_password()
+# Versión 7.4 (Estable) - Corregido el argumento de forgot_password()
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -165,7 +165,7 @@ if st.session_state["authentication_status"] is True:
             supabase.table('chat_history').delete().eq('user_id', user_id).execute()
             st.session_state.messages = []
             welcome_message = f"¡Hola {user_name}! Tu historial ha sido limpiado. ¿En qué te puedo ayudar?"
-            st.session_state.messages.append({"role": "assistant", "content": welcome_message, "id": None}) # Añadimos un ID nulo para el saludo
+            st.session_state.messages.append({"role": "assistant", "content": welcome_message, "id": None})
             supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': welcome_message}).execute()
             st.rerun() 
         
@@ -200,21 +200,13 @@ if st.session_state["authentication_status"] is True:
                         col_fb1, col_fb2, col_fb_rest = st.columns([1, 1, 8])
                         with col_fb1:
                             if st.button("👍", key=f"up_{message['id']}", use_container_width=True):
-                                supabase.table('feedback').insert({
-                                    "message_id": message['id'],
-                                    "user_id": user_id,
-                                    "rating": "good"
-                                }).execute()
+                                supabase.table('feedback').insert({"message_id": message['id'], "user_id": user_id, "rating": "good"}).execute()
                                 st.toast("¡Gracias por tu feedback!")
                                 time.sleep(1)
                                 st.rerun()
                         with col_fb2:
                             if st.button("👎", key=f"down_{message['id']}", use_container_width=True):
-                                supabase.table('feedback').insert({
-                                    "message_id": message['id'],
-                                    "user_id": user_id,
-                                    "rating": "bad"
-                                }).execute()
+                                supabase.table('feedback').insert({"message_id": message['id'], "user_id": user_id, "rating": "bad"}).execute()
                                 st.toast("¡Gracias! Tu feedback nos ayuda a mejorar.")
                                 time.sleep(1)
                                 st.rerun()
@@ -240,10 +232,10 @@ if st.session_state["authentication_status"] is True:
                     st.markdown(respuesta_bot)
             
             response_bot_insert = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': respuesta_bot}).execute()
-            new_bot_message_id = response_bot_insert.data[0]['id'] if response_bot_insert.data else None
+            new_message_id = response_bot_insert.data[0]['id'] if response_bot_insert.data else None
             
             st.session_state.messages.append({"id": new_bot_message_id, "role": "assistant", "content": respuesta_bot})
-            st.rerun() # Recargamos para mostrar los botones de feedback
+            st.rerun()
 
     # --- PESTAÑA 2: INSCRIPCIÓN DE ASIGNATURAS ---
     with tab2:
@@ -366,14 +358,14 @@ else:
     
     # --- CAMBIO AQUÍ: WIDGET DE "OLVIDÉ CONTRASEÑA" ---
     try:
-        # Usamos 'form_name' para el texto y 'location' para la ubicación
-        if authenticator.forgot_password(form_name="¿Olvidaste tu contraseña?", location='main'):
+        # Usamos solo 'location' y dejamos que el botón tenga el texto por defecto
+        if authenticator.forgot_password(location='main'):
             
             email_olvidado = st.session_state.email
             
             try:
                 # ¡¡IMPORTANTE!! DEBES CAMBIAR ESTO POR LA URL DE TU APP DE STREAMLIT
-                redirect_url = "https://chatbot-duoc1.streamlit.app" 
+                redirect_url = "https://chatbot-duoc1.streamlit.app" # Reemplaza con tu URL
                 
                 supabase.auth.reset_password_for_email(email_olvidado, options={
                     'redirect_to': redirect_url
