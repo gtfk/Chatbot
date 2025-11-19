@@ -1,4 +1,4 @@
-# Versión 8.0 (Final) - Todas las correcciones aplicadas
+# Versión 8.0 - Diseño con Pestañas para Login/Registro
 import streamlit as st
 # Importaciones compatibles con langchain==0.1.20
 from langchain_groq import ChatGroq
@@ -47,7 +47,6 @@ supabase = init_supabase_client()
 # --- CACHING DEL CHATBOT ---
 @st.cache_resource
 def inicializar_cadena():
-    # 1. Cargar PDF
     if not os.path.exists("reglamento.pdf"):
         st.error("No se encontró el archivo 'reglamento.pdf' en el repositorio.")
         st.stop()
@@ -56,7 +55,6 @@ def inicializar_cadena():
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
     docs = loader.load_and_split(text_splitter=text_splitter)
 
-    # 2. Embeddings y Retrievers
     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
     vector_store = Chroma.from_documents(docs, embeddings)
     vector_retriever = vector_store.as_retriever(search_kwargs={"k": 7})
@@ -69,10 +67,8 @@ def inicializar_cadena():
         weights=[0.5, 0.5]
     )
 
-    # 3. Modelo Groq
     llm = ChatGroq(api_key=GROQ_API_KEY, model="llama-3.1-8b-instant", temperature=0.1)
 
-    # 4. Prompt
     prompt_template = """
     INSTRUCCIÓN PRINCIPAL: Responde SIEMPRE en español, con un tono amigable y cercano.
     PERSONAJE: Eres un asistente experto en el reglamento académico de Duoc UC. Estás hablando con un estudiante llamado {user_name}.
@@ -93,7 +89,6 @@ def inicializar_cadena():
     """
     prompt = ChatPromptTemplate.from_template(prompt_template)
     
-    # 5. Cadenas
     question_answer_chain = create_stuff_documents_chain(llm, prompt)
     rag_chain = create_retrieval_chain(retriever, question_answer_chain)
     
@@ -106,6 +101,8 @@ def get_user_schedule(user_uuid):
     if not user_regs: return [], []
     
     section_ids = [reg['section_id'] for reg in user_regs]
+    if not section_ids: return [], []
+
     schedule_data = supabase.table('sections').select('subject_id, day_of_week, start_time, end_time').in_('id', section_ids).execute().data
     
     schedule = []
@@ -162,18 +159,24 @@ authenticator = stauth.Authenticate(
 
 # --- INTERFAZ PRINCIPAL ---
 
-col_title1, col_title2 = st.columns([0.1, 0.9])
+# Título con Logo
+col_title1, col_title2 = st.columns([0.15, 0.85])
 with col_title1:
-    st.image(LOGO_ICON_URL, width=70)
+    st.image(LOGO_ICON_URL, width=100)
 with col_title2:
     st.title("Asistente Académico Duoc UC")
 
-# 3. Sesión Iniciada
+# --- LÓGICA SI ESTÁ LOGUEADO ---
 if st.session_state["authentication_status"]:
     user_name = st.session_state["name"]
     user_email = st.session_state["username"]
     
+    # Sidebar solo con logo y logout
     st.sidebar.image(LOGO_BANNER_URL)
+    if st.sidebar.button("Cerrar Sesión", use_container_width=True):
+        authenticator.logout()
+        st.session_state.clear()
+        st.rerun()
     
     # Cargar ID de usuario
     if 'user_id' not in st.session_state:
@@ -183,21 +186,12 @@ if st.session_state["authentication_status"]:
     
     user_id = st.session_state.user_id
 
-    # Encabezado y Logout
-    col1, col2 = st.columns([0.8, 0.2])
-    with col1:
-        st.caption(f"Conectado como: {user_name} ({user_email})")
-    with col2:
-        if st.button("Cerrar Sesión", use_container_width=True):
-            authenticator.logout()
-            st.session_state.clear()
-            st.rerun()
-
-    # Pestañas
+    # Pestañas de la App
     tab1, tab2 = st.tabs(["Chatbot", "Inscripción"])
 
     # --- PESTAÑA 1: CHATBOT ---
     with tab1:
+        st.caption(f"👋 Hola, **{user_name}**")
         if st.button("Limpiar Historial", use_container_width=True):
             supabase.table('chat_history').delete().eq('user_id', user_id).execute()
             st.session_state.messages = []
@@ -230,36 +224,28 @@ if st.session_state["authentication_status"]:
                         c1, c2, _ = st.columns([1, 1, 8])
                         if c1.button("👍", key=f"up_{message['id']}"):
                             supabase.table('feedback').insert({"message_id": message['id'], "user_id": user_id, "rating": "good"}).execute()
-                            st.toast("¡Gracias!")
-                            time.sleep(1)
                             st.rerun()
                         if c2.button("👎", key=f"down_{message['id']}"):
                             supabase.table('feedback').insert({"message_id": message['id'], "user_id": user_id, "rating": "bad"}).execute()
-                            st.toast("¡Gracias! Mejoraremos.")
-                            time.sleep(1)
                             st.rerun()
                     else:
-                        st.caption(f"Calificación: {'👍' if fb[0]['rating'] == 'good' else '👎'}")
+                        st.caption(f"Feedback: {'👍' if fb[0]['rating'] == 'good' else '👎'}")
 
         # Input
         if prompt := st.chat_input("Pregunta..."):
             st.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"):
                 st.markdown(prompt)
-            
-            # Guardar pregunta
-            res_user = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'user', 'message': prompt}).execute()
+            supabase.table('chat_history').insert({'user_id': user_id, 'role': 'user', 'message': prompt}).execute()
             
             with st.chat_message("assistant"):
                 with st.spinner("Pensando..."):
                     response = chain.invoke({"input": prompt, "user_name": user_name})
                     st.markdown(response["answer"])
             
-            # Guardar respuesta (CORREGIDO)
             res_bot = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': response["answer"]}).execute()
             if res_bot.data:
-                new_message_id = res_bot.data[0]['id']
-                st.session_state.messages.append({"id": new_message_id, "role": "assistant", "content": response["answer"]})
+                st.session_state.messages.append({"id": res_bot.data[0]['id'], "role": "assistant", "content": response["answer"]})
             st.rerun()
 
     # --- PESTAÑA 2: INSCRIPCIÓN ---
@@ -292,14 +278,14 @@ if st.session_state["authentication_status"]:
                             c3.write(f"{sec['start_time']} - {sec['end_time']}")
                             
                             if c4.button(f"Inscribir ({cupos})", key=sec['id'], disabled=cupos<=0):
-                                if check_conflict(user_sch, sec):
+                                if check_schedule_conflict(user_schedule, sec):
                                     st.error("Tope de horario")
                                 else:
                                     supabase.table('registrations').insert({'user_id': user_id, 'section_id': sec['id']}).execute()
                                     st.toast("Inscrito")
                                     time.sleep(1)
                                     st.rerun()
-
+        
         st.divider()
         st.subheader("Tu Horario")
         regs = supabase.table('registrations').select('id, sections(section_code, day_of_week, start_time, end_time, subjects(name))').eq('user_id', user_id).execute().data
@@ -317,49 +303,59 @@ if st.session_state["authentication_status"]:
         else:
             st.info("Sin inscripciones.")
 
-# Login / Registro
+# --- LÓGICA SI NO ESTÁ LOGUEADO ---
 elif st.session_state["authentication_status"] is False:
     st.error('Usuario o contraseña incorrectos')
 elif st.session_state["authentication_status"] is None:
-    st.info('Por favor inicia sesión o regístrate.')
+    st.info('Bienvenido. Por favor inicia sesión o regístrate.')
 
 if not st.session_state["authentication_status"]:
-    with st.sidebar:
-        st.image(LOGO_BANNER_URL)
-        tab_login, tab_reg = st.tabs(["Login", "Registro"])
-        
-        with tab_login:
-            authenticator.login(location='main')
-        
-        with tab_reg:
-             with st.form("reg"):
-                st.write("Crear cuenta nueva")
-                new_name = st.text_input("Nombre")
-                new_email = st.text_input("Email")
-                new_pass = st.text_input("Contraseña", type="password")
-                if st.form_submit_button("Registrarse"):
-                    if new_name and new_email and len(new_pass) >= 6:
+    
+    # Pestañas PRINCIPALES para Login y Registro
+    tab_login, tab_reg = st.tabs(["Iniciar Sesión", "Registrarse"])
+    
+    with tab_login:
+        authenticator.login(location='main')
+        st.markdown("---")
+        with st.expander("¿Olvidaste tu contraseña?"):
+            rec_email = st.text_input("Ingresa tu email para recuperar")
+            if st.button("Enviar correo de recuperación"):
+                if rec_email:
+                    try:
+                        supabase.auth.reset_password_for_email(rec_email, options={
+                            'redirect_to': 'https://chatbot-duoc.streamlit.app'
+                        })
+                        st.success("Correo enviado. Revisa tu bandeja de entrada.")
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+                else:
+                    st.warning("Ingresa un email.")
+
+    with tab_reg:
+         with st.form("registro_form"):
+            st.subheader("Crear Cuenta Nueva")
+            new_name = st.text_input("Nombre Completo")
+            new_email = st.text_input("Email Institucional")
+            new_pass = st.text_input("Contraseña", type="password", help="Mínimo 6 caracteres")
+            new_pass_confirm = st.text_input("Confirmar Contraseña", type="password")
+            
+            if st.form_submit_button("Registrarse"):
+                if new_name and new_email and len(new_pass) >= 6:
+                    if new_pass != new_pass_confirm:
+                        st.error("Las contraseñas no coinciden.")
+                    else:
                         try:
                             hasher = stauth.Hasher()
                             hashed = hasher.hash(new_pass)
+                            # Guardamos en profiles
                             supabase.table('profiles').insert({
                                 'full_name': new_name, 'email': new_email, 'password_hash': hashed
                             }).execute()
-                            st.success("Creado. Inicia sesión.")
-                        except Exception as ex:
-                            st.error(f"Error: {ex}")
-                    else:
-                        st.error("Datos inválidos.")
-
-    st.markdown("---")
-    with st.expander("¿Olvidaste tu contraseña?"):
-        rec_email = st.text_input("Email para recuperar")
-        if st.button("Enviar correo de recuperación"):
-            if rec_email:
-                try:
-                    supabase.auth.reset_password_for_email(rec_email, options={'redirect_to': 'https://chatbot-duoc.streamlit.app'})
-                    st.success("Correo enviado.")
-                except Exception as e:
-                    st.error(f"Error: {e}")
-            else:
-                st.warning("Ingresa un email.")
+                            st.success("¡Cuenta creada con éxito! Ve a la pestaña 'Iniciar Sesión'.")
+                        except Exception as e:
+                            if 'duplicate' in str(e):
+                                st.error("Ese email ya está registrado.")
+                            else:
+                                st.error(f"Error: {e}")
+                else:
+                    st.error("Por favor completa todos los campos correctamente.")
