@@ -1,4 +1,4 @@
-# Versión 7.7 (Final) - URLs corregidas (https://)
+# Versión 7.8 (Final) - Logo actualizado desde Wikipedia
 import streamlit as st
 # Importaciones compatibles con langchain==0.1.20
 from langchain_groq import ChatGroq
@@ -17,10 +17,10 @@ import streamlit_authenticator as stauth
 import time
 from datetime import time as dt_time
 
-# --- URLs DE LOGOS (CORREGIDAS) ---
-# Nota: Deben empezar con "https://"
+# --- URLs DE LOGOS ---
 LOGO_BANNER_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/a/aa/Logo_DuocUC.svg/2560px-Logo_DuocUC.svg.png"
-LOGO_ICON_URL = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSlve2kMlU53cq9Tl0DMxP0Ffo0JNap2dXq4q_uSdf4PyFZ9uraw7MU5irI6mA-HG8byNI&usqp=CAU"
+# Nueva URL del logo (versión Wikipedia)
+LOGO_ICON_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/a/aa/Logo_DuocUC.svg/2560px-Logo_DuocUC.svg.png"
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(
@@ -171,9 +171,9 @@ authenticator = stauth.Authenticate(
 
 # --- INTERFAZ PRINCIPAL ---
 
-col_title1, col_title2 = st.columns([0.1, 0.9])
+col_title1, col_title2 = st.columns([0.15, 0.85]) # Ajusté un poco la proporción para el logo ancho
 with col_title1:
-    st.image(LOGO_ICON_URL, width=70)
+    st.image(LOGO_ICON_URL, width=100)
 with col_title2:
     st.title("Asistente Académico Duoc UC")
 
@@ -332,32 +332,33 @@ if not st.session_state["authentication_status"]:
             authenticator.login(location='main')
         
         with tab_reg:
-            with st.form("reg"):
-                st.subheader("Crear Cuenta")
-                n = st.text_input("Nombre")
-                e = st.text_input("Email")
-                p = st.text_input("Contraseña", type="password")
+             with st.form("registro"):
+                st.write("Crear cuenta nueva")
+                new_name = st.text_input("Nombre")
+                new_email = st.text_input("Email")
+                new_pass = st.text_input("Contraseña", type="password")
                 if st.form_submit_button("Registrarse"):
-                    if n and e and len(p) >= 6:
+                    if new_name and new_email and len(new_pass) >= 6:
                         try:
-                            h = stauth.Hasher([p]).generate()[0]
-                            res = supabase.table('profiles').insert({'full_name': n, 'email': e, 'password_hash': h}).execute()
-                            if res.data: st.success("Creado. Inicia sesión.")
-                            else: st.error("Error.")
-                        except Exception as ex:
-                            st.error(f"Error: {ex}")
+                            hashed = stauth.Hasher([new_pass]).generate()[0]
+                            supabase.table('profiles').insert({
+                                'full_name': new_name, 'email': new_email, 'password_hash': hashed
+                            }).execute()
+                            st.success("Creado. Inicia sesión.")
+                        except Exception as e:
+                            st.error(f"Error: {e}")
                     else:
                         st.error("Datos inválidos.")
 
+    # Olvidé contraseña (Link simple)
     st.markdown("---")
     with st.expander("¿Olvidaste tu contraseña?"):
-        rec_email = st.text_input("Email para recuperar")
+        email_recuperacion = st.text_input("Ingresa tu email para recuperar")
         if st.button("Enviar correo de recuperación"):
-            if rec_email:
-                try:
-                    supabase.auth.reset_password_for_email(rec_email, options={'redirect_to': 'https://chatbot-duoc.streamlit.app'})
-                    st.success("Correo enviado.")
-                except Exception as x:
-                    st.error(f"Error: {x}")
-            else:
-                st.warning("Ingresa un email.")
+            try:
+                supabase.auth.reset_password_for_email(email_recuperacion, options={
+                    'redirect_to': 'https://chatbot-duoc.streamlit.app'
+                })
+                st.success("Correo enviado.")
+            except Exception as e:
+                st.error(f"Error: {e}")
