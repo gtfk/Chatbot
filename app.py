@@ -1,5 +1,6 @@
-# Versión 7.6 (Final) - Formulario de recuperación personalizado (sin errores de librería)
+# Versión 7.7 (Final) - URLs corregidas (https://)
 import streamlit as st
+# Importaciones compatibles con langchain==0.1.20
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -16,7 +17,8 @@ import streamlit_authenticator as stauth
 import time
 from datetime import time as dt_time
 
-# --- URLs DE LOGOS ---
+# --- URLs DE LOGOS (CORREGIDAS) ---
+# Nota: Deben empezar con "https://"
 LOGO_BANNER_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/a/aa/Logo_DuocUC.svg/2560px-Logo_DuocUC.svg.png"
 LOGO_ICON_URL = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSlve2kMlU53cq9Tl0DMxP0Ffo0JNap2dXq4q_uSdf4PyFZ9uraw7MU5irI6mA-HG8byNI&usqp=CAU"
 
@@ -46,10 +48,16 @@ supabase = init_supabase_client()
 # --- CACHING DEL CHATBOT ---
 @st.cache_resource
 def inicializar_cadena():
+    # 1. Cargar PDF
+    if not os.path.exists("reglamento.pdf"):
+        st.error("No se encontró el archivo 'reglamento.pdf' en el repositorio.")
+        st.stop()
+        
     loader = PyPDFLoader("reglamento.pdf")
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
     docs = loader.load_and_split(text_splitter=text_splitter)
 
+    # 2. Embeddings y Retrievers
     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
     vector_store = Chroma.from_documents(docs, embeddings)
     vector_retriever = vector_store.as_retriever(search_kwargs={"k": 7})
@@ -57,9 +65,15 @@ def inicializar_cadena():
     bm25_retriever = BM25Retriever.from_documents(docs)
     bm25_retriever.k = 7
     
-    retriever = EnsembleRetriever(retrievers=[bm25_retriever, vector_retriever], weights=[0.7, 0.3])
+    retriever = EnsembleRetriever(
+        retrievers=[bm25_retriever, vector_retriever], 
+        weights=[0.5, 0.5]
+    )
+
+    # 3. Modelo Groq
     llm = ChatGroq(api_key=GROQ_API_KEY, model="llama-3.1-8b-instant", temperature=0.1)
 
+    # 4. Prompt
     prompt_template = """
     INSTRUCCIÓN PRINCIPAL: Responde SIEMPRE en español, con un tono amigable y cercano.
     PERSONAJE: Eres un asistente experto en el reglamento académico de Duoc UC. Estás hablando con un estudiante llamado {user_name}.
@@ -87,9 +101,12 @@ def inicializar_cadena():
     RESPUESTA:
     """
     prompt = ChatPromptTemplate.from_template(prompt_template)
-    document_chain = create_stuff_documents_chain(llm, prompt)
-    retrieval_chain = create_retrieval_chain(retriever, document_chain)
-    return retrieval_chain
+    
+    # 5. Cadenas
+    question_answer_chain = create_stuff_documents_chain(llm, prompt)
+    rag_chain = create_retrieval_chain(retriever, question_answer_chain)
+    
+    return rag_chain
 
 # --- FUNCIONES AUXILIARES DE INSCRIPCIÓN ---
 @st.cache_data(ttl=60) 
@@ -273,7 +290,7 @@ if st.session_state["authentication_status"]:
                             
                             c1.write(f"**{sec['section_code']}**")
                             c2.write(f"{sec['day_of_week']}")
-                            c3.write(f"{sec['start_time']}-{sec['end_time']}")
+                            c3.write(f"{sec['start_time']} - {sec['end_time']}")
                             
                             if c4.button(f"Inscribir ({cupos})", key=sec['id'], disabled=cupos<=0):
                                 if check_conflict(user_sch, sec):
@@ -310,48 +327,37 @@ if not st.session_state["authentication_status"]:
     with st.sidebar:
         st.image(LOGO_BANNER_URL)
         
-        # Usamos tabs para separar Login de Registro (Evita conflicto de 'location')
         tab_login, tab_reg = st.tabs(["Login", "Registro"])
-        
         with tab_login:
             authenticator.login(location='main')
-            
+        
         with tab_reg:
-             # Formulario de Registro PERSONALIZADO
-             with st.form("registro"):
-                st.write("Crear cuenta nueva")
-                new_name = st.text_input("Nombre")
-                new_email = st.text_input("Email")
-                new_pass = st.text_input("Contraseña", type="password")
+            with st.form("reg"):
+                st.subheader("Crear Cuenta")
+                n = st.text_input("Nombre")
+                e = st.text_input("Email")
+                p = st.text_input("Contraseña", type="password")
                 if st.form_submit_button("Registrarse"):
-                    if new_name and new_email and len(new_pass) >= 6:
+                    if n and e and len(p) >= 6:
                         try:
-                            hashed = stauth.Hasher([new_pass]).generate()[0]
-                            supabase.table('profiles').insert({
-                                'full_name': new_name, 'email': new_email, 'password_hash': hashed
-                            }).execute()
-                            st.success("Creado. Inicia sesión.")
-                        except Exception as e:
-                            st.error(f"Error: {e}")
+                            h = stauth.Hasher([p]).generate()[0]
+                            res = supabase.table('profiles').insert({'full_name': n, 'email': e, 'password_hash': h}).execute()
+                            if res.data: st.success("Creado. Inicia sesión.")
+                            else: st.error("Error.")
+                        except Exception as ex:
+                            st.error(f"Error: {ex}")
                     else:
                         st.error("Datos inválidos.")
 
-    # --- CAMBIO AQUÍ: Formulario Personalizado para Recuperar Contraseña ---
     st.markdown("---")
     with st.expander("¿Olvidaste tu contraseña?"):
-        st.write("Ingresa tu correo para recibir un enlace de recuperación.")
-        rec_email = st.text_input("Email para recuperar", key="rec_email")
+        rec_email = st.text_input("Email para recuperar")
         if st.button("Enviar correo de recuperación"):
             if rec_email:
                 try:
-                    # URL de tu app para que el usuario vuelva
-                    redirect_url = "https://chatbot-duoc.streamlit.app"
-                    supabase.auth.reset_password_for_email(rec_email, options={
-                        'redirect_to': redirect_url
-                    })
-                    st.success("¡Correo enviado! Revisa tu bandeja de entrada.")
-                except Exception as e:
-                    st.error(f"Error al enviar: {e}")
+                    supabase.auth.reset_password_for_email(rec_email, options={'redirect_to': 'https://chatbot-duoc.streamlit.app'})
+                    st.success("Correo enviado.")
+                except Exception as x:
+                    st.error(f"Error: {x}")
             else:
-                st.warning("Por favor ingresa un email.")
-    # --- FIN DEL CAMBIO ---
+                st.warning("Ingresa un email.")
