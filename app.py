@@ -1,4 +1,4 @@
-# Versión 7.5 (Estable) - Corregido el SyntaxError en las URLs de los logos
+# Versión 7.1 (Estable) - Corregido el NameError (variable mal escrita)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -6,9 +6,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_community.retrievers import BM25Retriever
-# --- Importación Estándar para EnsembleRetriever (para versión 0.1.x) ---
 from langchain.retrievers import EnsembleRetriever
-# --- Fin ---
 from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
@@ -18,15 +16,14 @@ import streamlit_authenticator as stauth
 import time
 from datetime import time as dt_time
 
-# --- URLs DE LOGOS (CORREGIDAS) ---
+# --- URLs DE LOGOS ---
 LOGO_BANNER_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/a/aa/Logo_DuocUC.svg/2560px-Logo_DuocUC.svg.png"
 LOGO_ICON_URL = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSlve2kMlU53cq9Tl0DMxP0Ffo0JNap2dXq4q_uSdf4PyFZ9uraw7MU5irI6mA-HG8byNI&usqp=CAU"
-# --- FIN DE LA CORRECCIÓN ---
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(
     page_title="Chatbot Académico Duoc UC", 
-    page_icon=LOGO_ICON_URL, # Usamos el logo cuadrado como ícono de pestaña
+    page_icon=LOGO_ICON_URL,
     layout="wide"
 )
 
@@ -123,12 +120,11 @@ authenticator = stauth.Authenticate(
 
 # --- INICIO DE LA LÓGICA DE LA APLICACIÓN ---
 
-# --- Título Principal con Logo (Escudo Cuadrado Duoc UC) ---
 col_title1, col_title2 = st.columns([0.1, 0.9])
 with col_title1:
-    st.image(LOGO_ICON_URL, width=70) # Usamos el logo cuadrado de Duoc UC
+    st.image(LOGO_ICON_URL, width=70)
 with col_title2:
-    st.title("Asistente Académico Duoc UC") # Título ligeramente acortado
+    st.title("Asistente Académico Duoc UC")
 
 # 3. Comprobar si el usuario ya está logueado
 if st.session_state["authentication_status"] is True:
@@ -147,7 +143,7 @@ if st.session_state["authentication_status"] is True:
     
     user_id = st.session_state.user_id
 
-    # --- Encabezado y Logout (Fuera de las pestañas) ---
+    # --- Encabezado y Logout ---
     col1, col2 = st.columns([0.8, 0.2])
     with col1:
         st.caption(f"Conectado como: {user_name} ({user_email})")
@@ -157,7 +153,7 @@ if st.session_state["authentication_status"] is True:
             st.session_state.clear()
             st.rerun()
 
-    # --- NAVEGACIÓN PRINCIPAL (PESTAÑAS) ---
+    # --- NAVEGACIÓN PRINCIPAL ---
     tab1, tab2 = st.tabs(["Chatbot de Reglamento", "Inscripción de Asignaturas"])
 
     # --- PESTAÑA 1: CHATBOT DE REGLAMENTO ---
@@ -233,16 +229,19 @@ if st.session_state["authentication_status"] is True:
                     st.markdown(respuesta_bot)
             
             response_bot_insert = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': respuesta_bot}).execute()
-            new_message_id = response_bot_insert.data[0]['id'] if response_bot_insert.data else None
             
+            # --- CORRECCIÓN AQUÍ (Línea 236 y 238) ---
+            # Usamos el mismo nombre de variable
+            new_bot_message_id = response_bot_insert.data[0]['id'] if response_bot_insert.data else None
             st.session_state.messages.append({"id": new_bot_message_id, "role": "assistant", "content": respuesta_bot})
+            # --- FIN DE LA CORRECCIÓN ---
+            
             st.rerun()
 
     # --- PESTAÑA 2: INSCRIPCIÓN DE ASIGNATURAS ---
     with tab2:
-        # ... (Todo el código de la pestaña 2 es idéntico al anterior) ...
+        # ... (La lógica de inscripción es idéntica, la dejo igual por brevedad pero debe ir aquí) ...
         st.header("Inscripción de Asignaturas")
-        
         @st.cache_data(ttl=60) 
         def get_user_schedule(user_uuid):
             user_regs = supabase.table('registrations').select('section_id').eq('user_id', user_uuid).execute().data
@@ -347,7 +346,6 @@ if st.session_state["authentication_status"] is True:
 
 # 4. Si el usuario NO está logueado, mostrar Login y Registro
 else:
-    # --- Formulario de Login (en la página principal) ---
     authenticator.login(location='main')
     
     if st.session_state["authentication_status"] is False:
@@ -357,31 +355,23 @@ else:
 
     st.markdown("---")
     
-    # --- WIDGET DE "OLVIDÉ CONTRASEÑA" PERSONALIZADO ---
-    st.subheader("¿Olvidaste tu contraseña?")
-    with st.form(key="forgot_password_form", clear_on_submit=True):
-        email_olvidado = st.text_input("Ingresa tu email de registro")
-        submit_button = st.form_submit_button(label="Enviar enlace de recuperación")
+    # Formulario de "Olvidé mi contraseña"
+    try:
+        if authenticator.forgot_password(form_name="¿Olvidaste tu contraseña?", location='main'):
+            email_olvidado = st.session_state.email
+            try:
+                redirect_url = "https://chatbot-duoc1.streamlit.app" 
+                supabase.auth.reset_password_for_email(email_olvidado, options={'redirect_to': redirect_url})
+                st.success("¡Email de recuperación enviado! Revisa tu bandeja de entrada.")
+                time.sleep(3)
+            except Exception as e:
+                st.error(f"Error al enviar el email: {e}")
+    except Exception as e:
+        st.error(f"Error en el proceso de contraseña olvidada: {e}")
 
-        if submit_button:
-            if not email_olvidado:
-                st.error("Por favor, ingresa un email.")
-            else:
-                try:
-                    # ¡¡IMPORTANTE!! DEBES CAMBIAR ESTO POR LA URL DE TU APP
-                    redirect_url = "https.chatbot-duoc1.streamlit.app" # Reemplaza con tu URL
-                    
-                    supabase.auth.reset_password_for_email(email_olvidado, options={
-                        'redirect_to': redirect_url
-                    })
-                    st.success("¡Email de recuperación enviado! Revisa tu bandeja de entrada.")
-                    time.sleep(3)
-                except Exception as e:
-                    st.error(f"Error al enviar el email: {e}")
-
-    # --- FORMULARIO DE REGISTRO PERSONALIZADO (en la barra lateral) ---
+    # Registro
     with st.sidebar:
-        st.image(LOGO_BANNER_URL) # Usamos el banner aquí
+        st.image(LOGO_BANNER_URL) 
         st.subheader("¿Nuevo Usuario? Regístrate")
         with st.form(key="register_form", clear_on_submit=True):
             name_reg = st.text_input("Nombre Completo")
@@ -399,21 +389,12 @@ else:
                     try:
                         hasher = stauth.Hasher()
                         hashed_password = hasher.hash(password_reg)
-                        
-                        insert_response = supabase.table('profiles').insert({
-                            'full_name': name_reg,
-                            'email': email_reg,
-                            'password_hash': hashed_password
-                        }).execute()
-                        
+                        insert_response = supabase.table('profiles').insert({'full_name': name_reg, 'email': email_reg, 'password_hash': hashed_password}).execute()
                         if insert_response.data:
                             st.success('¡Usuario registrado! Ahora puedes iniciar sesión.')
                             time.sleep(2) 
                         else:
-                            st.error('Error al registrar el usuario en la base de datos.')
-                    
+                            st.error('Error al registrar el usuario.')
                     except Exception as e:
-                        if 'duplicate key value violates unique constraint' in str(e):
-                            st.error("Error: Ese email ya está registrado.")
-                        else:
-                            st.error(f"Error en el registro: {e}")
+                        if 'duplicate key value' in str(e): st.error("Error: Ese email ya está registrado.")
+                        else: st.error(f"Error en el registro: {e}")
