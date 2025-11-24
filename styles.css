@@ -1,24 +1,23 @@
 /* 1. Importamos fuente de emojis de Google */
-@import url('https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&family=Source+Sans+Pro:wght@400;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&family=Source+Sans+Pro:wght@400;600;700;900&display=swap');
 
-/* 2. Aplicamos fuente a textos */
+/* 2. Fuente base segura */
 .stMarkdown p, .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown li, 
 .stTextInput input, .stTextArea textarea, .stSelectbox div, .stButton button, 
 p, span, label {
     font-family: 'Source Sans Pro', 'Noto Color Emoji', sans-serif !important;
 }
 
-/* 3. AJUSTE DE BOTONES (AZULES PARA MEJOR CONTRASTE) */
+/* 3. BOTONES (Azules con texto blanco) */
 div.stButton > button {
-    background-color: #002342 !important; /* Azul Duoc (Fondo Oscuro) */
-    color: #FFFFFF !important;            /* Texto Blanco (Resalta emojis amarillos) */
+    background-color: #002342 !important; 
+    color: #FFFFFF !important;            
     font-weight: bold !important;
     border-radius: 6px !important;
-    border: 1px solid #FFB81C !important; /* Borde Amarillo sutil */
+    border: 1px solid #FFB81C !important; 
 }
-
 div.stButton > button:hover {
-    background-color: #003366 !important; /* Azul un poco más claro al pasar mouse */
+    background-color: #003366 !important; 
     border-color: #FFFFFF !important;
     transform: scale(1.02);
 }
@@ -40,11 +39,29 @@ div[data-testid="chatAvatarIcon-assistant"] + div {
     color: #FFFFFF !important;
 }
 
-/* 6. Contenedor del Logo */
+/* 6. Contenedor Logo */
 .sidebar-logo-container {
     background-color: white;
     padding: 15px;
     border-radius: 10px;
     text-align: center;
     margin-bottom: 20px;
+}
+
+/* 7. MEJORA DE PESTAÑAS (TABS) - LO NUEVO */
+/* Pestaña Inactiva (Grisácea) */
+.stTabs [data-baseweb="tab"] {
+    color: #ADB5BD !important; /* Gris claro */
+    font-weight: 600 !important;
+    font-size: 16px !important;
+}
+
+/* Pestaña ACTIVA (Destacada en Amarillo) */
+.stTabs [aria-selected="true"] {
+    color: #FFB81C !important; /* Amarillo Duoc */
+    font-weight: 900 !important; /* Extra Negrita */
+    font-size: 20px !important; /* Más grande */
+    border-bottom: 3px solid #FFB81C !important; /* Línea inferior gruesa */
+    background-color: rgba(255, 184, 28, 0.05) !important; /* Fondo muy sutil */
+    border-radius: 5px 5px 0 0;
 }
