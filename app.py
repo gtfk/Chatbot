@@ -1,4 +1,4 @@
-# Versión 16.0 (FINAL: Tema Oscuro "Soft" + Emojis Visibles + Todo Integrado)
+# Versión 17.0 (FINAL: Tema vía Config.toml + Emojis Fix + Todo Integrado)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -29,83 +29,45 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- CSS GLOBAL: TEMA OSCURO SUAVE (SOFT DARK) ---
+# --- CSS SOLO PARA FUENTES Y DETALLES FINOS (Colores van en config.toml) ---
 st.markdown("""
     <style>
-    /* 1. Fuente Global y Emojis (Google Style) - CRÍTICO PARA QUE SE VEAN BIEN */
+    /* 1. Fuente Global y Emojis (Google Style) */
     @import url('https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&family=Source+Sans+Pro:wght@400;600;700&display=swap');
     
     html, body, [class*="st-"], .stMarkdown, .stButton, .stSelectbox, .stTextInput, .stTextArea {
         font-family: 'Source Sans Pro', 'Noto Color Emoji', 'Segoe UI Emoji', 'Apple Color Emoji', sans-serif !important;
     }
 
-    /* 2. Fondo Principal: Gris Carbón Suave (Evita el negro puro) */
-    .stApp {
-        background-color: #212529; 
-        color: #F8F9FA; /* Texto Blanco Hueso */
-    }
-
-    /* 3. Títulos y Cabeceras (Amarillo Duoc para destacar o Blanco) */
-    h1, h2, h3 {
-        color: #FFB81C !important; /* Amarillo Duoc para títulos */
-    }
-    p, label, div {
-        color: #E9ECEF; /* Texto general claro */
-    }
-
-    /* 4. Ajuste de Inputs (Cajas de texto gris oscuro) */
-    .stTextInput input, .stSelectbox div[data-baseweb="select"], .stTextArea textarea {
-        background-color: #343A40 !important; /* Gris más claro que el fondo */
-        color: #FFFFFF !important;
-        border: 1px solid #495057 !important;
-        border-radius: 8px !important;
-    }
-    /* Texto dentro de los selectores */
-    .stSelectbox div[data-baseweb="select"] span {
-        color: #FFFFFF !important;
-    }
-    
-    /* 5. Botones: Amarillo Duoc (Contraste alto) */
+    /* 2. Ajuste fino de Botones (Para que el texto sea legible sobre amarillo) */
     div.stButton > button {
-        background-color: #FFB81C; 
-        color: #002342; /* Texto Azul Oscuro para lectura fácil */
-        border: none;
+        color: #002342 !important; /* Azul oscuro para contraste con el amarillo */
         font-weight: bold;
         border-radius: 6px;
         transition: all 0.3s ease;
     }
     div.stButton > button:hover {
-        background-color: #FFC107; 
-        color: #000000;
         transform: scale(1.02);
+        border: 1px solid #FFFFFF;
     }
     
-    /* 6. Estilo del Chat: Burbujas Oscuras pero Diferenciadas */
-    /* Mensaje del Usuario (Azul Noche) */
+    /* 3. Estilo del Chat: Burbujas Personalizadas */
+    /* Mensaje del Usuario (Azul Noche más claro) */
     [data-testid="stChatMessage"] {
         background-color: #2C3E50;
         border: 1px solid #34495E;
         border-radius: 12px;
     }
-    /* Mensaje del Asistente (Gris Oscuro) */
+    /* Mensaje del Asistente (Gris Oscuro Integrado) */
     div[data-testid="chatAvatarIcon-assistant"] + div {
         background-color: #343A40;
         border: 1px solid #495057;
         border-radius: 12px;
     }
 
-    /* 7. Sidebar (Azul Duoc Muy Oscuro) */
-    [data-testid="stSidebar"] {
-        background-color: #001529; /* Azul muy oscuro casi negro */
-        border-right: 1px solid #2C3E50;
-    }
-    [data-testid="stSidebar"] * {
-        color: #DEE2E6 !important;
-    }
-
-    /* 8. Tablas (Dataframes) - Ajuste para fondo oscuro */
+    /* 4. Tablas (Dataframes) */
     [data-testid="stDataFrame"] {
-        background-color: #343A40;
+        background-color: transparent;
     }
     </style>
 """, unsafe_allow_html=True)

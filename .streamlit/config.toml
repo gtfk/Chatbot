@@ -1,7 +1,7 @@
 [theme]
-base="light"                  # Fuerza el modo claro base
-primaryColor="#FFB81C"        # Amarillo Duoc (Para botones y selectores)
-backgroundColor="#FFFFFF"     # Blanco Puro (Fondo principal)
-secondaryBackgroundColor="#F4F6F9" # Gris azulado muy suave (Barra lateral)
-textColor="#002342"           # Azul Oscuro Duoc (Para el texto, mejor que negro)
-font="sans serif"             # Base (Calibri se fuerza por CSS abajo)
+base="dark"
+primaryColor="#FFB81C"        # Amarillo Duoc (Botones, selectores, foco)
+backgroundColor="#212529"     # Gris Carbón Suave (Fondo principal)
+secondaryBackgroundColor="#001529" # Azul Noche Profundo (Barra lateral y bloques)
+textColor="#F8F9FA"           # Blanco Hueso (Texto principal)
+font="sans serif"             # Fuente base (luego la refinamos con CSS)
