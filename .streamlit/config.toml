@@ -1,7 +1,7 @@
 [theme]
 base="dark"
-primaryColor="#FFB81C"        # Amarillo Duoc (Botones, selectores, foco)
-backgroundColor="#212529"     # Gris Carbón Suave (Fondo principal)
-secondaryBackgroundColor="#001529" # Azul Noche Profundo (Barra lateral y bloques)
+primaryColor="#FFB81C"        # Amarillo Duoc (Botones y selectores)
+backgroundColor="#212529"     # Gris Carbón (Fondo principal, resalta emojis)
+secondaryBackgroundColor="#001529" # Azul Noche (Barra lateral)
 textColor="#F8F9FA"           # Blanco Hueso (Texto principal)
-font="sans serif"             # Fuente base (luego la refinamos con CSS)
+font="sans serif"

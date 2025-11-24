@@ -1,4 +1,4 @@
-# Versión 18.0 (FINAL: Fix "Keyboard" Icon + Logo Visible + Tema Light Profesional)
+# Versión 19.0 (FINAL: Fix Iconos + Fix Logo Oscuro + Todo Integrado)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -29,63 +29,46 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- CSS CORREGIDO (No rompe iconos del sistema) ---
+# --- CSS CORRECTIVO (Seguro para Iconos + Estilo Burbujas) ---
 st.markdown("""
     <style>
-    /* 1. Fuente Global para Texto de Contenido (No forzamos en toda la UI para no romper iconos) */
+    /* 1. Importamos fuente de emojis de Google */
     @import url('https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&family=Source+Sans+Pro:wght@400;600;700&display=swap');
     
-    /* Aplicamos fuente solo a textos legibles, inputs y botones de usuario */
-    .stApp, .stMarkdown, .stTextInput input, .stSelectbox, .stTextArea textarea, h1, h2, h3, p, li {
-        font-family: 'Calibri', 'Segoe UI', 'Source Sans Pro', 'Noto Color Emoji', sans-serif !important;
-        color: #002342; /* Azul Duoc Base */
+    /* 2. Aplicamos fuente SOLO a elementos de texto seguros (Evita romper iconos de Streamlit) */
+    .stMarkdown p, .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown li, 
+    .stTextInput input, .stTextArea textarea, .stSelectbox div, .stButton button {
+        font-family: 'Source Sans Pro', 'Noto Color Emoji', sans-serif !important;
     }
 
-    /* 2. Fondo Principal Blanco */
-    .stApp {
-        background-color: #FFFFFF;
-    }
-
-    /* 3. Ajuste de Inputs */
-    .stTextInput input, .stSelectbox div[data-baseweb="select"], .stTextArea textarea {
-        background-color: #FFFFFF !important;
-        border: 1px solid #ced4da !important;
-        border-radius: 8px !important;
-    }
-    
-    /* 4. Botones Amarillo Duoc */
+    /* 3. Ajuste para botones (Amarillo con texto oscuro) */
     div.stButton > button {
-        background-color: #FFB81C !important; 
-        color: #002342 !important;
-        border: none !important;
-        font-weight: bold !important;
-        border-radius: 6px !important;
-        transition: all 0.3s ease;
+        color: #002342 !important; 
+        font-weight: bold;
+        border-radius: 6px;
+        border: none;
     }
     div.stButton > button:hover {
+        filter: brightness(0.9);
         transform: scale(1.02);
-        filter: brightness(0.95);
     }
     
-    /* 5. Chat: Burbujas */
+    /* 4. Burbujas de chat personalizadas (Para tema oscuro suave) */
     [data-testid="stChatMessage"] {
-        background-color: #F0F2F6;
-        border: 1px solid #E6E9EF;
+        background-color: #2C3E50;
+        border: 1px solid #34495E;
         border-radius: 12px;
     }
+    /* Burbuja del Asistente */
     div[data-testid="chatAvatarIcon-assistant"] + div {
-        background-color: #E8F4FD;
-        border: 1px solid #D1E8FA;
+        background-color: #343A40;
+        border: 1px solid #495057;
         border-radius: 12px;
     }
-
-    /* 6. Sidebar (Fondo Gris muy suave) */
-    [data-testid="stSidebar"] {
-        background-color: #001529; /* Azul Noche para contraste */
-    }
-    /* Texto en Sidebar blanco */
+    
+    /* 5. Ajuste del sidebar para que el texto sea legible */
     [data-testid="stSidebar"] p, [data-testid="stSidebar"] span, [data-testid="stSidebar"] label {
-        color: #FFFFFF !important;
+        color: #FFFFFF !important; /* Forzar blanco en sidebar */
     }
     </style>
 """, unsafe_allow_html=True)
@@ -298,12 +281,12 @@ def fetch_all_users():
         return users_dict
     except: return {}
 
-# --- BARRA LATERAL (Logo con Fondo Blanco + Selector) ---
+# --- SIDEBAR (CON LOGO CORREGIDO) ---
 with st.sidebar:
-    # TRUCO: Logo dentro de un div blanco para que se vea el "UC"
+    # FIX: Contenedor blanco para el logo en fondo oscuro
     st.markdown(f"""
-        <div style="background-color: white; padding: 15px; border-radius: 10px; text-align: center; margin-bottom: 20px;">
-            <img src="{LOGO_BANNER_URL}" style="width: 100%; max-width: 200px;">
+        <div style="background-color: white; padding: 10px; border-radius: 10px; text-align: center; margin-bottom: 20px;">
+            <img src="{LOGO_BANNER_URL}" style="width: 100%; max-width: 180px;">
         </div>
     """, unsafe_allow_html=True)
     
