@@ -1,4 +1,4 @@
-# Versión 24.0 (FINAL: Migración a Supabase Auth Nativo para Correos + CSS Externo)
+# Versión 25.0 (FINAL: Corrección APIError + Sync de Perfiles + Todo Integrado)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -14,7 +14,6 @@ import os
 from supabase import create_client, Client
 import time
 from datetime import time as dt_time
-# Ya no necesitamos bcrypt porque Supabase maneja la seguridad
 
 # --- URLs DE LOGOS ---
 LOGO_BANNER_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/a/aa/Logo_DuocUC.svg/2560px-Logo_DuocUC.svg.png"
@@ -34,7 +33,7 @@ def load_css(file_name):
         with open(file_name) as f:
             st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
     except FileNotFoundError:
-        st.error(f"⚠️ No se encontró el archivo {file_name}. Asegúrate de que esté en la misma carpeta que app.py.")
+        st.error(f"⚠️ No se encontró el archivo {file_name}.")
 
 load_css("styles.css")
 
@@ -106,7 +105,7 @@ TEXTS = {
         "reg_email": "Correo Duoc",
         "reg_pass": "Crear Contraseña",
         "reg_btn": "Registrarse",
-        "reg_success": "¡Cuenta creada! Revisa tu correo para confirmar.",
+        "reg_success": "¡Cuenta creada! Ya puedes iniciar sesión.",
         "auth_error": "Verifica tus datos.",
         "system_prompt": "INSTRUCCIÓN: Responde en Español formal pero cercano. ROL: Coordinador académico Duoc UC."
     },
@@ -176,7 +175,7 @@ TEXTS = {
         "reg_email": "Duoc Email",
         "reg_pass": "Create Password",
         "reg_btn": "Register",
-        "reg_success": "Account created! Please check email to confirm.",
+        "reg_success": "Account created! You can now login.",
         "auth_error": "Check credentials.",
         "system_prompt": "INSTRUCTION: Respond in English. ROLE: Academic coordinator Duoc UC."
     }
@@ -273,7 +272,7 @@ if st.session_state["authentication_status"] is True:
     c1.caption(f"{t['login_success']} {user_name} ({user_email})")
     if c2.button(t["logout_btn"], use_container_width=True):
         try:
-            supabase.auth.sign_out() # Logout en Supabase
+            supabase.auth.sign_out() 
         except: pass
         st.session_state.clear()
         st.rerun()
@@ -308,9 +307,13 @@ if st.session_state["authentication_status"] is True:
                 st.session_state.messages.append({"id": row['id'], "role": row['role'], "content": row['message']})
             if not st.session_state.messages:
                 welcome_msg = t["chat_welcome"].format(name=user_name)
-                res = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': welcome_msg}).execute()
-                if res.data:
-                    st.session_state.messages.append({"id": res.data[0]['id'], "role": "assistant", "content": welcome_msg})
+                # Intento seguro de insertar bienvenida
+                try:
+                    res = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': welcome_msg}).execute()
+                    if res.data:
+                        st.session_state.messages.append({"id": res.data[0]['id'], "role": "assistant", "content": welcome_msg})
+                except Exception as e:
+                    st.error(f"Error al inicializar chat. Verifica que tu usuario tenga perfil. Error: {e}")
 
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
@@ -475,7 +478,7 @@ if st.session_state["authentication_status"] is True:
         elif admin_pass: st.error(t["auth_error"])
 
 # ==========================================
-# LOGIN MANUAL (Si NO está logueado)
+# LOGIN MANUAL
 # ==========================================
 else:
     col_L, col_Main, col_R = st.columns([1, 2, 1])
@@ -487,15 +490,22 @@ else:
             submit = st.form_submit_button(t["login_btn"], use_container_width=True)
             if submit:
                 try:
-                    # --- LOGIN NATIVO DE SUPABASE ---
+                    # LOGIN NATIVO
                     res = supabase.auth.sign_in_with_password({"email": input_email, "password": input_pass})
                     
-                    # Si pasa, guardamos sesión
+                    # GUARDAR SESIÓN
                     st.session_state["authentication_status"] = True
                     st.session_state["user_id"] = res.user.id
                     st.session_state["username"] = input_email
-                    # Intentamos sacar el nombre de la metadata
-                    st.session_state["name"] = res.user.user_metadata.get('full_name', 'Estudiante')
+                    # Recuperar nombre del profile
+                    try:
+                        prof = supabase.table('profiles').select('full_name').eq('id', res.user.id).execute()
+                        if prof.data:
+                            st.session_state["name"] = prof.data[0]['full_name']
+                        else:
+                            st.session_state["name"] = "Estudiante"
+                    except:
+                        st.session_state["name"] = "Estudiante"
                     
                     st.toast(t["login_welcome"])
                     time.sleep(0.5)
@@ -503,7 +513,7 @@ else:
                 except Exception as e:
                     st.error(t["login_failed"])
         
-        # --- RECUPERAR CONTRASEÑA ---
+        # Recuperar Contraseña
         st.write("") 
         with st.expander(t["forgot_header"]):
             with st.form("forgot_form", enter_to_submit=False):
@@ -511,15 +521,10 @@ else:
                 if st.form_submit_button(t["forgot_btn"]):
                     if email_rec:
                         try:
-                            # --- RECUPERACIÓN NATIVA DE SUPABASE ---
-                            supabase.auth.reset_password_for_email(email_rec, options={
-                                'redirect_to': 'https://chatbot-duoc1.streamlit.app' 
-                            })
+                            supabase.auth.reset_password_for_email(email_rec, options={'redirect_to': 'https://chatbot-duoc1.streamlit.app'})
                             st.success(t["forgot_success"])
-                        except Exception as e:
-                            st.error(f"Error: {e}")
-                    else:
-                        st.warning("Ingresa un correo.")
+                        except Exception as e: st.error(f"Error: {e}")
+                    else: st.warning("Ingresa un correo.")
 
     with st.sidebar:
         st.subheader(t["reg_header"])
@@ -529,15 +534,21 @@ else:
             p = st.text_input(t["reg_pass"], type="password")
             if st.form_submit_button(t["reg_btn"]):
                 try:
-                    # --- REGISTRO NATIVO DE SUPABASE ---
-                    # Esto crea el usuario en Auth y envía el correo de confirmación
+                    # 1. REGISTRO EN AUTH
                     res = supabase.auth.sign_up({
                         "email": e, 
-                        "password": p, 
-                        "options": {
-                            "data": { "full_name": n } # Guardamos el nombre en metadata
-                        }
+                        "password": p,
+                        "options": { "data": { "full_name": n } }
                     })
-                    st.success(t["reg_success"])
+                    # 2. INSERTAR EN PROFILES USANDO EL ID DE AUTH (CRÍTICO PARA EVITAR APIError)
+                    if res.user:
+                        supabase.table('profiles').insert({
+                            'id': res.user.id,  # <-- ESTA ES LA CLAVE DEL ARREGLO
+                            'email': e,
+                            'full_name': n
+                        }).execute()
+                        st.success(t["reg_success"])
+                    else:
+                        st.info("Revisa tu correo para confirmar.")
                 except Exception as err: 
                     st.error(f"Error: {err}")
