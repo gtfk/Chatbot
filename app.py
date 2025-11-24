@@ -1,4 +1,4 @@
-# Versión 25.0 (FINAL: Corrección APIError + Sync de Perfiles + Todo Integrado)
+# Versión 25.0 (FINAL: Registro Corregido + Auth Nativo + Todo Integrado)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -14,6 +14,7 @@ import os
 from supabase import create_client, Client
 import time
 from datetime import time as dt_time
+# Nota: Ya no importamos bcrypt porque usamos la seguridad nativa de Supabase
 
 # --- URLs DE LOGOS ---
 LOGO_BANNER_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/a/aa/Logo_DuocUC.svg/2560px-Logo_DuocUC.svg.png"
@@ -33,7 +34,7 @@ def load_css(file_name):
         with open(file_name) as f:
             st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
     except FileNotFoundError:
-        st.error(f"⚠️ No se encontró el archivo {file_name}.")
+        st.error(f"⚠️ No se encontró el archivo {file_name}. Asegúrate de que esté en la misma carpeta que app.py.")
 
 load_css("styles.css")
 
@@ -61,14 +62,14 @@ TEXTS = {
         "chat_clear_btn": "🧹 Limpiar Conversación",
         "chat_cleaning": "Procesando solicitud...",
         "chat_cleaned": "¡Historial limpiado!",
-        "chat_welcome": "¡Hola **{name}**! 👋 Soy tu asistente virtual de Duoc UC.",
-        "chat_welcome_clean": "¡Hola **{name}**! El historial ha sido archivado.",
+        "chat_welcome": "¡Hola **{name}**! 👋 Soy tu asistente virtual de Duoc UC. Pregúntame sobre el reglamento, asistencia o notas.",
+        "chat_welcome_clean": "¡Hola **{name}**! El historial ha sido archivado. ¿En qué más te ayudo?",
         "chat_placeholder": "Ej: ¿Con qué nota apruebo el ramo?",
         "chat_thinking": "Consultando reglamento...",
         "feedback_thanks": "¡Gracias por tu feedback! 👍",
         "feedback_report_sent": "Reporte enviado.",
         "feedback_modal_title": "¿Qué podemos mejorar?",
-        "feedback_modal_placeholder": "Ej: La respuesta no es precisa...",
+        "feedback_modal_placeholder": "Ej: La información sobre asistencia no es precisa...",
         "btn_send": "Enviar Comentario",
         "btn_cancel": "Omitir",
         "enroll_title": "Toma de Ramos 2025",
@@ -82,22 +83,22 @@ TEXTS = {
         "sec_title": "Secciones Disponibles para:",
         "btn_enroll": "Inscribir",
         "btn_full": "Sin Cupos",
-        "msg_enrolled": "✅ ¡Inscrito exitosamente!",
-        "msg_conflict": "⛔ Error: Tope de Horario",
-        "msg_already": "ℹ️ Ya estás inscrito.",
+        "msg_enrolled": "✅ ¡Asignatura inscrita exitosamente!",
+        "msg_conflict": "⛔ Error: Tope de Horario detectado",
+        "msg_already": "ℹ️ Ya estás inscrito en esta asignatura.",
         "my_schedule": "Tu Carga Académica",
         "no_schedule": "No tienes ramos inscritos.",
         "btn_drop": "Anular Ramo",
-        "msg_dropped": "Asignatura eliminada.",
+        "msg_dropped": "Asignatura eliminada de tu carga.",
         "admin_title": "Panel de Control (Admin)",
         "admin_pass_label": "Clave de Acceso:",
         "admin_success": "Acceso Autorizado",
-        "admin_info": "Registro de auditoría.",
+        "admin_info": "Registro de interacciones y feedback negativo.",
         "admin_update_btn": "🔄 Refrescar Datos",
-        "col_date": "Fecha",
+        "col_date": "Fecha/Hora",
         "col_status": "Estado",
-        "col_q": "Pregunta",
-        "col_a": "Respuesta",
+        "col_q": "Pregunta Estudiante",
+        "col_a": "Respuesta IA",
         "col_val": "Eval",
         "col_com": "Detalle",
         "reg_header": "Crear Cuenta Alumno",
@@ -107,7 +108,10 @@ TEXTS = {
         "reg_btn": "Registrarse",
         "reg_success": "¡Cuenta creada! Ya puedes iniciar sesión.",
         "auth_error": "Verifica tus datos.",
-        "system_prompt": "INSTRUCCIÓN: Responde en Español formal pero cercano. ROL: Coordinador académico Duoc UC."
+        "system_prompt": """
+        INSTRUCCIÓN: Responde en Español formal pero cercano.
+        ROL: Eres un coordinador académico de Duoc UC.
+        """
     },
     "en": {
         "label": "English 🇺🇸",
@@ -131,19 +135,19 @@ TEXTS = {
         "chat_clear_btn": "🧹 Clear Conversation",
         "chat_cleaning": "Processing...",
         "chat_cleaned": "History cleared!",
-        "chat_welcome": "Hello **{name}**! 👋 I'm your Duoc UC virtual assistant.",
-        "chat_welcome_clean": "Hello **{name}**! History archived.",
+        "chat_welcome": "Hello **{name}**! 👋 I'm your Duoc UC virtual assistant. Ask me about regulations, attendance, or grades.",
+        "chat_welcome_clean": "Hello **{name}**! History archived. Can I help with anything else?",
         "chat_placeholder": "Ex: What is the passing grade?",
         "chat_thinking": "Consulting rulebook...",
-        "feedback_thanks": "Thanks! 👍",
+        "feedback_thanks": "Thanks for your feedback! 👍",
         "feedback_report_sent": "Report sent.",
         "feedback_modal_title": "What went wrong?",
-        "feedback_modal_placeholder": "Ex: Inaccurate info...",
+        "feedback_modal_placeholder": "Ex: The information is inaccurate...",
         "btn_send": "Send Comment",
         "btn_cancel": "Skip",
         "enroll_title": "Course Registration 2025",
-        "filter_career": "📂 Career:",
-        "filter_sem": "⏳ Semester:",
+        "filter_career": "📂 Filter by Career:",
+        "filter_sem": "⏳ Filter by Semester:",
         "filter_all": "All Careers",
         "filter_all_m": "All Semesters",
         "reset_btn": "🔄 Clear Filters",
@@ -152,32 +156,35 @@ TEXTS = {
         "sec_title": "Available Sections for:",
         "btn_enroll": "Enroll",
         "btn_full": "Full",
-        "msg_enrolled": "✅ Enrolled successfully!",
+        "msg_enrolled": "✅ Subject enrolled successfully!",
         "msg_conflict": "⛔ Error: Schedule Conflict",
-        "msg_already": "ℹ️ Already enrolled.",
+        "msg_already": "ℹ️ You are already enrolled.",
         "my_schedule": "Your Academic Load",
         "no_schedule": "No subjects enrolled.",
-        "btn_drop": "Drop",
-        "msg_dropped": "Subject removed.",
+        "btn_drop": "Drop Course",
+        "msg_dropped": "Subject removed from load.",
         "admin_title": "Control Panel (Admin)",
         "admin_pass_label": "Access Key:",
         "admin_success": "Access Granted",
-        "admin_info": "Audit log.",
-        "admin_update_btn": "🔄 Refresh",
-        "col_date": "Date",
+        "admin_info": "Log of interactions and negative feedback.",
+        "admin_update_btn": "🔄 Refresh Data",
+        "col_date": "Date/Time",
         "col_status": "Status",
-        "col_q": "Question",
-        "col_a": "Answer",
+        "col_q": "Student Question",
+        "col_a": "AI Answer",
         "col_val": "Rate",
         "col_com": "Detail",
-        "reg_header": "Create Account",
+        "reg_header": "Create Student Account",
         "reg_name": "Full Name",
         "reg_email": "Duoc Email",
         "reg_pass": "Create Password",
         "reg_btn": "Register",
         "reg_success": "Account created! You can now login.",
         "auth_error": "Check credentials.",
-        "system_prompt": "INSTRUCTION: Respond in English. ROLE: Academic coordinator Duoc UC."
+        "system_prompt": """
+        INSTRUCTION: Respond in English, formal but friendly.
+        ROLE: You are an academic coordinator at Duoc UC.
+        """
     }
 }
 
@@ -313,7 +320,8 @@ if st.session_state["authentication_status"] is True:
                     if res.data:
                         st.session_state.messages.append({"id": res.data[0]['id'], "role": "assistant", "content": welcome_msg})
                 except Exception as e:
-                    st.error(f"Error al inicializar chat. Verifica que tu usuario tenga perfil. Error: {e}")
+                    # Si falla por falta de perfil, mostramos error amable
+                    st.error(f"Error: Tu usuario no tiene perfil creado. Por favor regístrate de nuevo.")
 
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
@@ -478,7 +486,7 @@ if st.session_state["authentication_status"] is True:
         elif admin_pass: st.error(t["auth_error"])
 
 # ==========================================
-# LOGIN MANUAL
+# LOGIN MANUAL (Si NO está logueado)
 # ==========================================
 else:
     col_L, col_Main, col_R = st.columns([1, 2, 1])
@@ -540,10 +548,10 @@ else:
                         "password": p,
                         "options": { "data": { "full_name": n } }
                     })
-                    # 2. INSERTAR EN PROFILES USANDO EL ID DE AUTH (CRÍTICO PARA EVITAR APIError)
+                    # 2. INSERTAR EN PROFILES (SIN PASSWORD_HASH)
                     if res.user:
                         supabase.table('profiles').insert({
-                            'id': res.user.id,  # <-- ESTA ES LA CLAVE DEL ARREGLO
+                            'id': res.user.id,  
                             'email': e,
                             'full_name': n
                         }).execute()
