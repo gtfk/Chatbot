@@ -1,4 +1,4 @@
-# Versión 14.6 (FINAL: Corrección KeyError + Banderas Estables + Todo Integrado)
+# Versión 14.7 (FINAL: Eliminado texto 'Press Enter' + Banderas + Todo Integrado)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -28,7 +28,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- CSS PARA FORZAR EMOJIS (Evita que se vean como letras en Windows) ---
+# --- CSS PARA FORZAR EMOJIS ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap');
@@ -41,6 +41,7 @@ st.markdown("""
 # --- DICCIONARIO DE TRADUCCIONES ---
 TEXTS = {
     "es": {
+        "label": "Español 🇨🇱",
         "title": "Asistente Académico Duoc UC",
         "sidebar_lang": "Idioma / Language",
         "login_success": "Conectado como:",
@@ -109,6 +110,7 @@ TEXTS = {
         """
     },
     "en": {
+        "label": "English 🇺🇸",
         "title": "Duoc UC Academic Assistant",
         "sidebar_lang": "Language / Idioma",
         "login_success": "Logged in as:",
@@ -244,20 +246,12 @@ def fetch_all_users():
         return users_dict
     except: return {}
 
-# --- SELECTOR DE IDIOMA (CORREGIDO PARA EVITAR KEYERROR) ---
+# --- SELECTOR DE IDIOMA ---
 with st.sidebar:
     st.image(LOGO_BANNER_URL)
-    
-    # Selector con opciones visuales
-    lang_option = st.selectbox("🌐 Language / Idioma", ["Español 🇨🇱", "English 🇺🇸"])
-    
-    # Mapeo manual de opción visual a código de idioma
-    if lang_option == "Español 🇨🇱":
-        lang_code = "es"
-    else:
-        lang_code = "en"
-    
-    # Ahora cargamos el diccionario seguro
+    lang_option = st.selectbox("🌐 Language / Idioma", ["Español 🇨🇱", "English 🇺🇸"], format_func=lambda x: TEXTS["es" if "Español" in x else "en"]["label"])
+    if "Español" in lang_option: lang_code = "es"
+    else: lang_code = "en"
     t = TEXTS[lang_code]
 
 # --- CABECERA ---
@@ -282,7 +276,6 @@ if st.session_state["authentication_status"] is True:
         else: st.stop()
     user_id = st.session_state.user_id
 
-    # Header Logout
     c1, c2 = st.columns([0.8, 0.2])
     c1.caption(f"{t['login_success']} {user_name} ({user_email})")
     if c2.button(t["logout_btn"], use_container_width=True):
@@ -290,7 +283,6 @@ if st.session_state["authentication_status"] is True:
         st.session_state.clear()
         st.rerun()
 
-    # Tabs
     tab1, tab2, tab3 = st.tabs([t["tab1"], t["tab2"], t["tab3"]])
 
     # --- TAB 1: CHATBOT ---
@@ -336,7 +328,8 @@ if st.session_state["authentication_status"] is True:
                     reason_key = f"show_reason_{msg['id']}"
                     if col_fb2.button("👎", key=f"down_{msg['id']}"): st.session_state[reason_key] = True
                     if st.session_state.get(reason_key, False):
-                        with st.form(key=f"form_{msg['id']}"):
+                        # --- AQUI ESTA LA MAGIA: enter_to_submit=False ---
+                        with st.form(key=f"form_{msg['id']}", enter_to_submit=False):
                             st.write(t["feedback_modal_title"])
                             comment_text = st.text_area("...", placeholder=t["feedback_modal_placeholder"], label_visibility="collapsed")
                             c_sub1, c_sub2 = st.columns(2)
@@ -494,7 +487,8 @@ else:
     col_L, col_Main, col_R = st.columns([1, 2, 1])
     with col_Main:
         st.subheader(t["login_title"])
-        with st.form("login_form"):
+        # --- AQUI ESTA LA MAGIA: enter_to_submit=False ---
+        with st.form("login_form", enter_to_submit=False):
             input_email = st.text_input(t["login_user"])
             input_pass = st.text_input(t["login_pass"], type="password")
             submit = st.form_submit_button(t["login_btn"], use_container_width=True)
@@ -514,7 +508,8 @@ else:
 
     with st.sidebar:
         st.subheader(t["reg_header"])
-        with st.form("reg"):
+        # --- AQUI ESTA LA MAGIA: enter_to_submit=False ---
+        with st.form("reg", enter_to_submit=False):
             n = st.text_input(t["reg_name"])
             e = st.text_input(t["reg_email"])
             p = st.text_input(t["reg_pass"], type="password")
