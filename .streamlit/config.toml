@@ -1,7 +1,7 @@
 [theme]
-# Colores de Duoc UC
-primaryColor="#FFC107"
-backgroundColor="#0E1117"
-secondaryBackgroundColor="#003366"
-textColor="#FFFFFF"
-font="sans serif"
+base="light"                  # Fuerza el modo claro base
+primaryColor="#FFB81C"        # Amarillo Duoc (Para botones y selectores)
+backgroundColor="#FFFFFF"     # Blanco Puro (Fondo principal)
+secondaryBackgroundColor="#F4F6F9" # Gris azulado muy suave (Barra lateral)
+textColor="#002342"           # Azul Oscuro Duoc (Para el texto, mejor que negro)
+font="sans serif"             # Base (Calibri se fuerza por CSS abajo)

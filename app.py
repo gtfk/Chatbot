@@ -1,4 +1,4 @@
-# Versión 14.8 (FINAL: Emojis Google Style en TODA la App + Login + Admin)
+# Versión 15.0 (FINAL: Estilo Light "Duoc UC" + Fuente Calibri + Emojis Fix + Todo Integrado)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -25,18 +25,72 @@ LOGO_ICON_URL = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSlve2kMlU
 st.set_page_config(
     page_title="Chatbot Duoc UC", 
     page_icon=LOGO_ICON_URL,
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-# --- CSS GLOBAL PARA EMOJIS UNIFORMES ---
+# --- CSS GLOBAL: ESTILO "LIGHT" CORPORATIVO + FUENTE CALIBRI + EMOJIS ---
 st.markdown("""
     <style>
-    /* Importamos la fuente de emojis de Google */
+    /* 1. Importamos fuente de emojis de Google para compatibilidad */
     @import url('https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap');
     
-    /* Aplicamos a toda la app: HTML, Body, Botones, Inputs, etc. */
-    html, body, [class*="st-"], .stMarkdown, .stButton, .stSelectbox, .stTextInput {
-        font-family: 'Source Sans Pro', 'Noto Color Emoji', 'Segoe UI Emoji', 'Apple Color Emoji', sans-serif !important;
+    /* 2. Aplicamos Calibri/Segoe UI a TODA la app y forzamos color Azul Oscuro */
+    html, body, [class*="st-"], .stMarkdown, .stButton, .stSelectbox, .stTextInput, .stTextArea {
+        font-family: 'Calibri', 'Segoe UI', 'Roboto', 'Noto Color Emoji', sans-serif !important;
+        color: #002342 !important; /* Azul Duoc */
+    }
+
+    /* 3. Fondo Principal Blanco Puro */
+    .stApp {
+        background-color: #FFFFFF;
+    }
+
+    /* 4. Ajuste de Inputs (Cajas de texto y selectores) */
+    .stTextInput input, .stSelectbox div[data-baseweb="select"], .stTextArea textarea {
+        background-color: #FFFFFF !important;
+        color: #002342 !important;
+        border: 1px solid #ced4da !important;
+        border-radius: 8px !important;
+    }
+    
+    /* 5. Botones: Amarillo Duoc con Texto Azul */
+    div.stButton > button {
+        background-color: #FFB81C; /* Amarillo */
+        color: #002342; /* Texto Azul */
+        border: none;
+        font-weight: bold;
+        border-radius: 6px;
+        transition: all 0.3s ease;
+    }
+    div.stButton > button:hover {
+        background-color: #E5A500; /* Amarillo más oscuro al pasar mouse */
+        transform: scale(1.02);
+    }
+    
+    /* 6. Estilo del Chat: Burbujas diferenciadas y limpias */
+    /* Mensaje del Usuario (Gris claro) */
+    [data-testid="stChatMessage"] {
+        background-color: #F0F2F6;
+        border: 1px solid #E6E9EF;
+        border-radius: 12px;
+    }
+    /* Mensaje del Asistente (Azul muy tenue corporativo) */
+    div[data-testid="chatAvatarIcon-assistant"] + div {
+        background-color: #E8F4FD;
+        border: 1px solid #D1E8FA;
+        border-radius: 12px;
+    }
+
+    /* 7. Sidebar (Gris muy claro para contraste suave) */
+    [data-testid="stSidebar"] {
+        background-color: #F8F9FA;
+        border-right: 1px solid #DEE2E6;
+    }
+    
+    /* 8. Pestañas (Tabs) */
+    .stTabs [data-baseweb="tab-list"] button [data-testid="stMarkdownContainer"] p {
+        font-size: 1.1rem;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -61,11 +115,11 @@ TEXTS = {
         "chat_clear_btn": "Limpiar Historial del Chat",
         "chat_cleaning": "Archivando conversación...",
         "chat_cleaned": "¡Chat limpio visualmente!",
-        "chat_welcome": "¡Hola {name}! Soy tu asistente del reglamento académico. ¿En qué te puedo ayudar hoy?",
-        "chat_welcome_clean": "¡Hola {name}! Historial archivado. Feedback guardado.",
+        "chat_welcome": "¡Hola {name}! 👋 Soy tu asistente del reglamento académico. ¿En qué te puedo ayudar hoy?",
+        "chat_welcome_clean": "¡Hola {name}! Historial archivado. Feedback guardado. 👍",
         "chat_placeholder": "Escribe tu duda sobre el reglamento...",
-        "chat_thinking": "Pensando...",
-        "feedback_thanks": "¡Gracias por tu valoración!",
+        "chat_thinking": "Consultando reglamento...",
+        "feedback_thanks": "¡Gracias por tu valoración! ⭐",
         "feedback_report_sent": "Reporte enviado. ¡Gracias!",
         "feedback_modal_title": "Cuéntanos, ¿qué salió mal?",
         "feedback_modal_placeholder": "Ej: La respuesta es incorrecta...",
@@ -82,7 +136,7 @@ TEXTS = {
         "sec_title": "Secciones para:",
         "btn_enroll": "Inscribir",
         "btn_full": "Lleno",
-        "msg_enrolled": "¡Inscrito correctamente!",
+        "msg_enrolled": "✅ ¡Inscrito correctamente!",
         "msg_conflict": "⛔ Tope de Horario",
         "msg_already": "ℹ️ Ya tienes esta asignatura.",
         "my_schedule": "Tu Horario Actual",
@@ -108,7 +162,7 @@ TEXTS = {
         "reg_success": "¡Cuenta creada! Por favor inicia sesión.",
         "auth_error": "Usuario o contraseña incorrectos",
         "system_prompt": """
-        INSTRUCCIÓN PRINCIPAL: Responde SIEMPRE en español.
+        INSTRUCCIÓN PRINCIPAL: Responde SIEMPRE en español formal pero cercano.
         PERSONAJE: Eres un asistente experto en el reglamento académico de Duoc UC.
         """
     },
@@ -130,11 +184,11 @@ TEXTS = {
         "chat_clear_btn": "Clear Chat History",
         "chat_cleaning": "Archiving conversation...",
         "chat_cleaned": "Chat cleared visually!",
-        "chat_welcome": "Hello {name}! I am your academic rulebook assistant. How can I help you today?",
-        "chat_welcome_clean": "Hello {name}! History archived. Feedback saved.",
+        "chat_welcome": "Hello {name}! 👋 I am your academic rulebook assistant. How can I help you today?",
+        "chat_welcome_clean": "Hello {name}! History archived. Feedback saved. 👍",
         "chat_placeholder": "Ask your question about the regulations...",
         "chat_thinking": "Thinking...",
-        "feedback_thanks": "Thanks for your feedback!",
+        "feedback_thanks": "Thanks for your feedback! ⭐",
         "feedback_report_sent": "Report sent. Thanks!",
         "feedback_modal_title": "Tell us, what went wrong?",
         "feedback_modal_placeholder": "Ex: The answer is incorrect...",
@@ -151,7 +205,7 @@ TEXTS = {
         "sec_title": "Sections for:",
         "btn_enroll": "Enroll",
         "btn_full": "Full",
-        "msg_enrolled": "Enrolled successfully!",
+        "msg_enrolled": "✅ Enrolled successfully!",
         "msg_conflict": "⛔ Schedule Conflict",
         "msg_already": "ℹ️ You already have this subject.",
         "my_schedule": "Your Current Schedule",
@@ -252,9 +306,19 @@ def fetch_all_users():
 # --- SELECTOR DE IDIOMA ---
 with st.sidebar:
     st.image(LOGO_BANNER_URL)
-    lang_option = st.selectbox("🌐 Language / Idioma", ["Español 🇨🇱", "English 🇺🇸"], format_func=lambda x: TEXTS["es" if "Español" in x else "en"]["label"])
-    if "Español" in lang_option: lang_code = "es"
-    else: lang_code = "en"
+    # Selector de idioma con banderas
+    lang_option = st.selectbox(
+        "🌐 Language / Idioma", 
+        ["Español 🇨🇱", "English 🇺🇸"],
+        format_func=lambda x: TEXTS["es" if "Español" in x else "en"]["label"]
+    )
+    
+    # Lógica para asignar código de idioma
+    if "Español" in lang_option:
+        lang_code = "es"
+    else:
+        lang_code = "en"
+    
     t = TEXTS[lang_code]
 
 # --- CABECERA ---
@@ -331,6 +395,7 @@ if st.session_state["authentication_status"] is True:
                     reason_key = f"show_reason_{msg['id']}"
                     if col_fb2.button("👎", key=f"down_{msg['id']}"): st.session_state[reason_key] = True
                     if st.session_state.get(reason_key, False):
+                        # Formulario de Feedback Negativo (Sin envío con Enter)
                         with st.form(key=f"form_{msg['id']}", enter_to_submit=False):
                             st.write(t["feedback_modal_title"])
                             comment_text = st.text_area("...", placeholder=t["feedback_modal_placeholder"], label_visibility="collapsed")
