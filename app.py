@@ -1,4 +1,4 @@
-# Versión 7.6 (Con Filtros de Asignatura)
+# Versión 7.7 (Filtros Avanzados: Mención + Semestre)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -233,7 +233,7 @@ if st.session_state["authentication_status"] is True:
             st.session_state.messages.append({"id": new_bot_message_id, "role": "assistant", "content": respuesta_bot})
             st.rerun()
 
-    # --- PESTAÑA 2: INSCRIPCIÓN DE ASIGNATURAS (¡MODIFICADA CON FILTROS!) ---
+    # --- PESTAÑA 2: INSCRIPCIÓN DE ASIGNATURAS (CON DOBLE FILTRO) ---
     with tab2:
         st.header("Inscripción de Asignaturas")
         
@@ -262,11 +262,11 @@ if st.session_state["authentication_status"] is True:
                         return True 
             return False 
 
-        # --- MODIFICACIÓN: TRAER DATOS COMPLETOS PARA FILTRAR ---
+        # --- OBTENER DATOS (AHORA INCLUYE SEMESTRE) ---
         @st.cache_data(ttl=300) 
         def get_all_subjects_data():
-            # Ahora pedimos también la columna 'career'
-            response = supabase.table('subjects').select('id, name, career').order('name').execute()
+            # Pedimos id, name, career Y semester
+            response = supabase.table('subjects').select('id, name, career, semester').order('name').execute()
             return response.data
         
         subjects_data = get_all_subjects_data()
@@ -274,42 +274,49 @@ if st.session_state["authentication_status"] is True:
         if not subjects_data:
              st.warning("No hay asignaturas cargadas. Ejecuta el script de carga.")
         else:
-            # 1. Crear Lista de Filtros (Carreras únicas)
-            # Usamos un set para obtener valores únicos y luego ordenamos
+            # --- 1. PREPARAR LISTAS DE FILTROS ÚNICOS ---
             unique_careers = sorted(list(set([s['career'] for s in subjects_data if s['career']])))
+            unique_semesters = sorted(list(set([s['semester'] for s in subjects_data if s['semester']])))
             
-            # Agregamos opción "Todos" al principio
-            filter_options = ["Mostrar Todo"] + unique_careers
+            # --- 2. MOSTRAR FILTROS (EN 2 COLUMNAS) ---
+            col_filter_career, col_filter_sem = st.columns(2)
             
-            # --- WIDGET DE FILTRO ---
-            col_filter1, col_filter2 = st.columns([1, 2])
-            with col_filter1:
-                st.markdown("##### 🔍 Filtrar por:")
-                selected_category = st.radio("Categoría:", options=filter_options, label_visibility="collapsed")
+            with col_filter_career:
+                selected_category = st.selectbox("📂 Filtrar por Carrera:", ["Todas"] + unique_careers)
+                
+            with col_filter_sem:
+                # Convertimos los números de semestre a texto "Semestre X" para que se vea bonito
+                sem_options = ["Todos"] + [f"Semestre {s}" for s in unique_semesters]
+                selected_semester_str = st.selectbox("⏳ Filtrar por Semestre:", sem_options)
 
-            # 2. Filtrar la lista de asignaturas según la selección
-            if selected_category == "Mostrar Todo":
-                filtered_subjects = subjects_data
-            else:
-                filtered_subjects = [s for s in subjects_data if s['career'] == selected_category]
+            # --- 3. APLICAR LÓGICA DE FILTRADO ---
+            filtered_subjects = subjects_data # Empezamos con todos
+            
+            # Filtro 1: Carrera
+            if selected_category != "Todas":
+                filtered_subjects = [s for s in filtered_subjects if s['career'] == selected_category]
+            
+            # Filtro 2: Semestre
+            if selected_semester_str != "Todos":
+                # Extraemos el número del string "Semestre 5" -> 5
+                sem_num = int(selected_semester_str.split(" ")[1])
+                filtered_subjects = [s for s in filtered_subjects if s['semester'] == sem_num]
 
-            # Crear diccionario para el Selectbox final
+            # --- 4. SELECTOR DE ASIGNATURA FINAL ---
             subjects_dict = {s['name']: s['id'] for s in filtered_subjects}
 
-            # --- WIDGET DE SELECCIÓN DE ASIGNATURA (FILTRADO) ---
-            with col_filter2:
-                st.markdown("##### 📚 Selecciona la Asignatura:")
-                selected_subject_name = st.selectbox(
-                    "Escribe o selecciona:", 
-                    options=subjects_dict.keys(),
-                    placeholder="Busca tu ramo...",
-                    index=None, # Para que empiece vacío
-                    label_visibility="collapsed"
-                )
+            st.markdown("##### 📚 Selecciona la Asignatura:")
+            selected_subject_name = st.selectbox(
+                "Resultados de la búsqueda:", 
+                options=subjects_dict.keys(),
+                placeholder="Selecciona un ramo...",
+                index=None,
+                label_visibility="collapsed"
+            )
             
             st.divider()
 
-            # Lógica de mostrar secciones (Igual que antes)
+            # --- 5. MOSTRAR SECCIONES (IGUAL QUE ANTES) ---
             if selected_subject_name:
                 selected_subject_id = subjects_dict[selected_subject_name]
                 sections_response = supabase.table('sections').select('*').eq('subject_id', selected_subject_id).execute()
@@ -358,7 +365,6 @@ if st.session_state["authentication_status"] is True:
         if not current_schedule_info:
             st.info("No tienes asignaturas inscritas aún.")
         else:
-            # Mostrar tabla de horario bonita
             all_regs = supabase.table('registrations').select('id, sections(subject_id, section_code, day_of_week, start_time, end_time, professor_name, subjects(name))').eq('user_id', user_id).execute().data
             
             for reg in all_regs:
