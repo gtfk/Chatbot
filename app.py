@@ -1,4 +1,4 @@
-# Versión 21.0 (FINAL: Lógica Pura + CSS Externo + Todo Integrado)
+# Versión 21.1 (FINAL: Código Limpio en Texto Plano)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -35,9 +35,9 @@ def load_css(file_name):
         with open(file_name) as f:
             st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
     except FileNotFoundError:
-        st.error(f"⚠️ No se encontró el archivo {file_name}. Asegúrate de que esté en la misma carpeta.")
+        st.error(f"⚠️ No se encontró el archivo {file_name}. Asegúrate de que esté en la misma carpeta que app.py.")
 
-# Llamamos a la función para aplicar styles.css
+# Cargar estilos
 load_css("styles.css")
 
 # --- DICCIONARIO DE TRADUCCIONES ---
@@ -250,6 +250,7 @@ def fetch_all_users():
 
 # --- SIDEBAR ---
 with st.sidebar:
+    # Contenedor del logo con clase CSS para fondo blanco
     st.markdown(f"""
         <div class="sidebar-logo-container">
             <img src="{LOGO_BANNER_URL}" style="width: 100%; max-width: 180px;">
