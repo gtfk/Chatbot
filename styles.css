@@ -1,9 +1,10 @@
-/* 1. Fuente Global y Emojis (Google Style) */
+/* 1. Importamos fuente de emojis de Google */
 @import url('https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&family=Source+Sans+Pro:wght@400;600;700&display=swap');
 
 /* 2. Aplicamos fuente SOLO a elementos de texto seguros (Evita romper iconos de Streamlit) */
 .stMarkdown p, .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown li, 
-.stTextInput input, .stTextArea textarea, .stSelectbox div, .stButton button, p, span, label {
+.stTextInput input, .stTextArea textarea, .stSelectbox div, .stButton button, 
+p, span, label {
     font-family: 'Source Sans Pro', 'Noto Color Emoji', sans-serif !important;
 }
 
@@ -34,10 +35,10 @@ div[data-testid="chatAvatarIcon-assistant"] + div {
 
 /* 5. Ajuste del sidebar para que el texto sea legible sobre azul oscuro */
 [data-testid="stSidebar"] p, [data-testid="stSidebar"] span, [data-testid="stSidebar"] label {
-    color: #FFFFFF !important;
+    color: #FFFFFF !important; /* Forzar blanco en sidebar */
 }
 
-/* 6. Ajuste del contenedor del logo en sidebar */
+/* 6. Contenedor del Logo en Sidebar (Fondo blanco) */
 .sidebar-logo-container {
     background-color: white;
     padding: 10px;

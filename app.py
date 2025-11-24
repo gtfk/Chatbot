@@ -1,4 +1,4 @@
-# Versión 19.0 (FINAL: Fix Iconos + Fix Logo Oscuro + Todo Integrado)
+# Versión 21.0 (FINAL: Lógica Pura + CSS Externo + Todo Integrado)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -29,49 +29,16 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- CSS CORRECTIVO (Seguro para Iconos + Estilo Burbujas) ---
-st.markdown("""
-    <style>
-    /* 1. Importamos fuente de emojis de Google */
-    @import url('https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&family=Source+Sans+Pro:wght@400;600;700&display=swap');
-    
-    /* 2. Aplicamos fuente SOLO a elementos de texto seguros (Evita romper iconos de Streamlit) */
-    .stMarkdown p, .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown li, 
-    .stTextInput input, .stTextArea textarea, .stSelectbox div, .stButton button {
-        font-family: 'Source Sans Pro', 'Noto Color Emoji', sans-serif !important;
-    }
+# --- CARGAR CSS DESDE ARCHIVO EXTERNO ---
+def load_css(file_name):
+    try:
+        with open(file_name) as f:
+            st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
+    except FileNotFoundError:
+        st.error(f"⚠️ No se encontró el archivo {file_name}. Asegúrate de que esté en la misma carpeta.")
 
-    /* 3. Ajuste para botones (Amarillo con texto oscuro) */
-    div.stButton > button {
-        color: #002342 !important; 
-        font-weight: bold;
-        border-radius: 6px;
-        border: none;
-    }
-    div.stButton > button:hover {
-        filter: brightness(0.9);
-        transform: scale(1.02);
-    }
-    
-    /* 4. Burbujas de chat personalizadas (Para tema oscuro suave) */
-    [data-testid="stChatMessage"] {
-        background-color: #2C3E50;
-        border: 1px solid #34495E;
-        border-radius: 12px;
-    }
-    /* Burbuja del Asistente */
-    div[data-testid="chatAvatarIcon-assistant"] + div {
-        background-color: #343A40;
-        border: 1px solid #495057;
-        border-radius: 12px;
-    }
-    
-    /* 5. Ajuste del sidebar para que el texto sea legible */
-    [data-testid="stSidebar"] p, [data-testid="stSidebar"] span, [data-testid="stSidebar"] label {
-        color: #FFFFFF !important; /* Forzar blanco en sidebar */
-    }
-    </style>
-""", unsafe_allow_html=True)
+# Llamamos a la función para aplicar styles.css
+load_css("styles.css")
 
 # --- DICCIONARIO DE TRADUCCIONES ---
 TEXTS = {
@@ -281,11 +248,10 @@ def fetch_all_users():
         return users_dict
     except: return {}
 
-# --- SIDEBAR (LOGO FIX) ---
+# --- SIDEBAR ---
 with st.sidebar:
-    # FIX: Contenedor blanco para el logo en fondo oscuro
     st.markdown(f"""
-        <div style="background-color: white; padding: 10px; border-radius: 10px; text-align: center; margin-bottom: 20px;">
+        <div class="sidebar-logo-container">
             <img src="{LOGO_BANNER_URL}" style="width: 100%; max-width: 180px;">
         </div>
     """, unsafe_allow_html=True)
