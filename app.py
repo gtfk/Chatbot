@@ -1,4 +1,4 @@
-# Versión 14.4 (FINAL: Banderas arregladas + Todo Integrado)
+# Versión 14.5 (FINAL: Banderas Forzadas con CSS + Login + Admin)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -28,9 +28,23 @@ st.set_page_config(
     layout="wide"
 )
 
+# --- CSS PARA FORZAR EMOJIS DE BANDERAS (PARCHE PARA WINDOWS) ---
+st.markdown("""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap');
+    
+    /* Aplicar fuente de emoji a los selectbox y textos */
+    .stSelectbox div[data-baseweb="select"] > div, 
+    .stSelectbox span {
+        font-family: 'Noto Color Emoji', 'Segoe UI Emoji', 'Apple Color Emoji', sans-serif !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 # --- DICCIONARIO DE TRADUCCIONES ---
 TEXTS = {
     "es": {
+        "label": "Español 🇨🇱", # Etiqueta para el selector
         "title": "Asistente Académico Duoc UC",
         "sidebar_lang": "Idioma / Language",
         "login_success": "Conectado como:",
@@ -99,6 +113,7 @@ TEXTS = {
         """
     },
     "en": {
+        "label": "English 🇺🇸", # Etiqueta para el selector
         "title": "Duoc UC Academic Assistant",
         "sidebar_lang": "Language / Idioma",
         "login_success": "Logged in as:",
@@ -234,19 +249,18 @@ def fetch_all_users():
         return users_dict
     except: return {}
 
-# --- SELECTOR DE IDIOMA (CON BANDERAS) ---
+# --- SELECTOR DE IDIOMA MEJORADO ---
 with st.sidebar:
     st.image(LOGO_BANNER_URL)
     
-    # === BANDERAS AGREGADAS AQUÍ ===
-    lang_option = st.selectbox("🌐 Language / Idioma", ["Español 🇨🇱", "English 🇺🇸"])
+    # Usamos claves 'es'/'en' pero mostramos el texto bonito con format_func
+    lang_code = st.selectbox(
+        "🌐 Language / Idioma", 
+        options=["es", "en"],
+        format_func=lambda x: TEXTS[x]["label"] # Muestra "Español 🇨🇱" o "English 🇺🇸"
+    )
     
-    if lang_option == "Español 🇨🇱":
-        lang = "es"
-    else:
-        lang = "en"
-    
-    t = TEXTS[lang]
+    t = TEXTS[lang_code]
 
 # --- CABECERA ---
 col_title1, col_title2 = st.columns([0.1, 0.9])
@@ -300,7 +314,7 @@ if st.session_state["authentication_status"] is True:
                 except Exception as e: st.error(f"Error: {e}")
         
         st.divider()
-        retrieval_chain = inicializar_cadena(lang)
+        retrieval_chain = inicializar_cadena(lang_code)
 
         if "messages" not in st.session_state:
             st.session_state.messages = []
