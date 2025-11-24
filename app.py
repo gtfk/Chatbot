@@ -1,4 +1,4 @@
-# Versión 22.0 (FINAL: Lógica Limpia + Fix Iconos + CSS Separado)
+# Versión 23.0 (FINAL: Recuperar Contraseña Restaurado + Fixes Visuales)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -37,7 +37,6 @@ def load_css(file_name):
     except FileNotFoundError:
         st.error(f"⚠️ No se encontró el archivo {file_name}. Asegúrate de que esté en la misma carpeta que app.py.")
 
-# Cargar estilos visuales
 load_css("styles.css")
 
 # --- DICCIONARIO DE TRADUCCIONES ---
@@ -57,6 +56,11 @@ TEXTS = {
         "login_btn": "Ingresar",
         "login_failed": "❌ Credenciales inválidas",
         "login_welcome": "¡Bienvenido al Asistente!",
+        # Recuperar Contraseña
+        "forgot_header": "¿Olvidaste tu contraseña?",
+        "forgot_email": "Ingresa tu correo registrado",
+        "forgot_btn": "Recuperar Contraseña",
+        "forgot_success": "Si el correo existe, recibirás un enlace de recuperación.",
         "chat_clear_btn": "🧹 Limpiar Conversación",
         "chat_cleaning": "Procesando solicitud...",
         "chat_cleaned": "¡Historial limpiado!",
@@ -126,6 +130,11 @@ TEXTS = {
         "login_btn": "Login",
         "login_failed": "❌ Invalid credentials",
         "login_welcome": "Welcome to the Assistant!",
+        # Password Recovery
+        "forgot_header": "Forgot your password?",
+        "forgot_email": "Enter your registered email",
+        "forgot_btn": "Recover Password",
+        "forgot_success": "If the email exists, you will receive a recovery link.",
         "chat_clear_btn": "🧹 Clear Conversation",
         "chat_cleaning": "Processing...",
         "chat_cleaned": "History cleared!",
@@ -271,7 +280,7 @@ if "authentication_status" not in st.session_state:
     st.session_state["authentication_status"] = None
 
 # ==========================================
-# APP PRINCIPAL
+# APP PRINCIPAL (SI ESTÁ LOGUEADO)
 # ==========================================
 if st.session_state["authentication_status"] is True:
     user_name = st.session_state["name"]
@@ -487,7 +496,7 @@ if st.session_state["authentication_status"] is True:
         elif admin_pass: st.error(t["auth_error"])
 
 # ==========================================
-# LOGIN MANUAL
+# LOGIN MANUAL (Si NO está logueado)
 # ==========================================
 else:
     col_L, col_Main, col_R = st.columns([1, 2, 1])
@@ -510,6 +519,24 @@ else:
                         st.rerun()
                     else: st.error(t["login_failed"])
                 else: st.error(t["login_failed"])
+        
+        # --- RECUPERAR CONTRASEÑA (AÑADIDO AQUÍ) ---
+        st.write("") 
+        with st.expander(t["forgot_header"]):
+            with st.form("forgot_form", enter_to_submit=False):
+                email_rec = st.text_input(t["forgot_email"])
+                if st.form_submit_button(t["forgot_btn"]):
+                    if email_rec:
+                        try:
+                            # Intenta enviar correo de recuperación vía Supabase
+                            supabase.auth.reset_password_for_email(email_rec, options={
+                                'redirect_to': 'https://chatbot-duoc1.streamlit.app' # Tu URL
+                            })
+                            st.success(t["forgot_success"])
+                        except Exception as e:
+                            st.error(f"Error: {e}")
+                    else:
+                        st.warning("Ingresa un correo.")
 
     with st.sidebar:
         st.subheader(t["reg_header"])
