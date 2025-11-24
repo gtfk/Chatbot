@@ -1,4 +1,4 @@
-# Versión 7.7 (Filtros Avanzados: Mención + Semestre)
+# Versión 7.9 (Filtros Bidireccionales: Carrera <-> Semestre)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -33,7 +33,7 @@ SUPABASE_URL = st.secrets.get("SUPABASE_URL")
 SUPABASE_KEY = st.secrets.get("SUPABASE_KEY")
 
 if not GROQ_API_KEY or not SUPABASE_URL or not SUPABASE_KEY:
-    st.error("Una o más claves de API no están configuradas. Por favor, revísalas en los Secrets de Streamlit.")
+    st.error("Error: Faltan claves de API en los Secrets.")
     st.stop()
 
 # --- INICIALIZAR EL CLIENTE DE SUPABASE ---
@@ -85,349 +85,256 @@ def inicializar_cadena():
     RESPUESTA:
     """
     prompt = ChatPromptTemplate.from_template(prompt_template)
-    
     document_chain = create_stuff_documents_chain(llm, prompt)
     retrieval_chain = create_retrieval_chain(retriever, document_chain)
     return retrieval_chain
 
-# --- LÓGICA DE AUTENTICACIÓN ---
+# --- AUTENTICACIÓN ---
 def fetch_all_users():
     try:
         response = supabase.table('profiles').select("email, full_name, password_hash").execute()
-        users = response.data
-        if not users:
-            return {'usernames': {}}
+        if not response.data: return {'usernames': {}}
         credentials = {'usernames': {}}
-        for user in users:
+        for user in response.data:
             credentials['usernames'][user['email']] = {
-                'email': user['email'],
-                'name': user['full_name'],
-                'password': user['password_hash']
+                'email': user['email'], 'name': user['full_name'], 'password': user['password_hash']
             }
         return credentials
-    except Exception as e:
-        st.error(f"Error al cargar usuarios: {e}")
-        return {'usernames': {}}
+    except: return {'usernames': {}}
 
 credentials = fetch_all_users()
-authenticator = stauth.Authenticate(
-    credentials,
-    'chatbot_duoc_cookie',
-    'abcdefg123456', 
-    cookie_expiry_days=30
-)
+authenticator = stauth.Authenticate(credentials, 'chatbot_duoc_cookie', 'abcdefg123456', cookie_expiry_days=30)
 
-# --- INICIO DE LA APLICACIÓN ---
-
-# Título Principal
+# --- INICIO DE LA APP ---
 col_title1, col_title2 = st.columns([0.1, 0.9])
-with col_title1:
-    st.image(LOGO_ICON_URL, width=70)
-with col_title2:
-    st.title("Asistente Académico Duoc UC")
+with col_title1: st.image(LOGO_ICON_URL, width=70)
+with col_title2: st.title("Asistente Académico Duoc UC")
 
-# Verificar estado de autenticación
 if st.session_state["authentication_status"] is True:
     user_name = st.session_state["name"]
     user_email = st.session_state["username"]
     
     st.sidebar.image(LOGO_BANNER_URL) 
     
+    # Obtener ID de usuario
     if 'user_id' not in st.session_state:
         user_id_response = supabase.table('profiles').select('id').eq('email', user_email).execute()
-        if user_id_response.data:
-            st.session_state.user_id = user_id_response.data[0]['id']
-        else:
-            st.error("Error crítico: No se pudo encontrar el perfil del usuario logueado.")
-            st.stop()
-    
+        if user_id_response.data: st.session_state.user_id = user_id_response.data[0]['id']
+        else: st.stop()
     user_id = st.session_state.user_id
 
-    # Encabezado y Logout
-    col1, col2 = st.columns([0.8, 0.2])
-    with col1:
-        st.caption(f"Conectado como: {user_name} ({user_email})")
-    with col2:
-        if st.button("Cerrar Sesión", use_container_width=True, key="logout_button_global"):
-            authenticator.logout()
-            st.session_state.clear()
-            st.rerun()
+    # Header
+    c1, c2 = st.columns([0.8, 0.2])
+    c1.caption(f"Conectado como: {user_name} ({user_email})")
+    if c2.button("Cerrar Sesión", use_container_width=True):
+        authenticator.logout()
+        st.session_state.clear()
+        st.rerun()
 
-    # NAVEGACIÓN
     tab1, tab2 = st.tabs(["Chatbot de Reglamento", "Inscripción de Asignaturas"])
 
     # --- PESTAÑA 1: CHATBOT ---
     with tab1:
-        if st.button("Limpiar Historial del Chat", use_container_width=True, key="clear_chat"):
+        if st.button("Limpiar Chat", key="clear_chat"):
             supabase.table('chat_history').delete().eq('user_id', user_id).execute()
             st.session_state.messages = []
-            welcome_message = f"¡Hola {user_name}! Tu historial ha sido limpiado. ¿En qué te puedo ayudar?"
-            st.session_state.messages.append({"role": "assistant", "content": welcome_message, "id": None})
-            supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': welcome_message}).execute()
-            st.rerun() 
+            st.rerun()
         
-        st.divider() 
+        st.divider()
         retrieval_chain = inicializar_cadena()
 
-        # Cargar historial
         if "messages" not in st.session_state:
             st.session_state.messages = []
             history = supabase.table('chat_history').select('id, role, message').eq('user_id', user_id).order('created_at').execute()
             for row in history.data:
                 st.session_state.messages.append({"id": row['id'], "role": row['role'], "content": row['message']})
-            
             if not st.session_state.messages:
-                welcome_message = f"¡Hola {user_name}! Soy tu asistente del reglamento académico. ¿En qué te puedo ayudar hoy?"
-                response = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': welcome_message}).execute()
-                new_message_id = response.data[0]['id'] if response.data else None
-                st.session_state.messages.append({"id": new_message_id, "role": "assistant", "content": welcome_message})
+                 st.session_state.messages.append({"id": None, "role": "assistant", "content": f"¡Hola {user_name}! Soy tu asistente. ¿En qué te ayudo?"})
 
-        # Mostrar historial
-        for message in st.session_state.messages:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
-                
-                # Feedback
-                if message["role"] == "assistant" and message["id"] is not None:
-                    feedback_response = supabase.table('feedback').select('id, rating').eq('message_id', message['id']).execute()
-                    existing_feedback = feedback_response.data
-                    
-                    if not existing_feedback:
-                        col_fb1, col_fb2, col_fb_rest = st.columns([1, 1, 8])
-                        with col_fb1:
-                            if st.button("👍", key=f"up_{message['id']}", use_container_width=True):
-                                supabase.table('feedback').insert({"message_id": message['id'], "user_id": user_id, "rating": "good"}).execute()
-                                st.toast("¡Gracias por tu feedback!")
-                                time.sleep(1)
-                                st.rerun()
-                        with col_fb2:
-                            if st.button("👎", key=f"down_{message['id']}", use_container_width=True):
-                                supabase.table('feedback').insert({"message_id": message['id'], "user_id": user_id, "rating": "bad"}).execute()
-                                st.toast("¡Gracias! Tu feedback nos ayuda a mejorar.")
-                                time.sleep(1)
-                                st.rerun()
-                    else:
-                        if existing_feedback[0]['rating'] == 'good':
-                            st.markdown("<span>Gracias por tu feedback 👍</span>", unsafe_allow_html=True)
-                        else:
-                            st.markdown("<span>Gracias por tu feedback 👎</span>", unsafe_allow_html=True)
+        for msg in st.session_state.messages:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+                if msg["role"] == "assistant" and msg["id"]:
+                    col_fb1, col_fb2, _ = st.columns([1,1,8])
+                    if col_fb1.button("👍", key=f"up_{msg['id']}"):
+                        supabase.table('feedback').insert({"message_id": msg['id'], "user_id": user_id, "rating": "good"}).execute()
+                        st.toast("¡Gracias!")
+                    if col_fb2.button("👎", key=f"down_{msg['id']}"):
+                        supabase.table('feedback').insert({"message_id": msg['id'], "user_id": user_id, "rating": "bad"}).execute()
+                        st.toast("¡Gracias!")
 
-        # Input Chat
-        if prompt := st.chat_input("¿Qué duda tienes sobre el reglamento?"):
-            user_message_data = {"role": "user", "content": prompt}
-            st.session_state.messages.append(user_message_data)
-            with st.chat_message("user"):
-                st.markdown(prompt)
-            
-            response_user_insert = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'user', 'message': prompt}).execute()
+        if prompt := st.chat_input("Escribe tu duda..."):
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            with st.chat_message("user"): st.markdown(prompt)
+            supabase.table('chat_history').insert({'user_id': user_id, 'role': 'user', 'message': prompt}).execute()
             
             with st.chat_message("assistant"):
-                with st.spinner("Pensando... 💭"):
-                    response = retrieval_chain.invoke({"input": prompt, "user_name": user_name })
-                    respuesta_bot = response["answer"]
-                    st.markdown(respuesta_bot)
+                with st.spinner("Pensando..."):
+                    resp = retrieval_chain.invoke({"input": prompt, "user_name": user_name})["answer"]
+                    st.markdown(resp)
             
-            response_bot_insert = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': respuesta_bot}).execute()
-            new_bot_message_id = response_bot_insert.data[0]['id'] if response_bot_insert.data else None
-            
-            st.session_state.messages.append({"id": new_bot_message_id, "role": "assistant", "content": respuesta_bot})
+            res_bot = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': resp}).execute()
+            st.session_state.messages.append({"id": res_bot.data[0]['id'], "role": "assistant", "content": resp})
             st.rerun()
 
-    # --- PESTAÑA 2: INSCRIPCIÓN DE ASIGNATURAS (CON DOBLE FILTRO) ---
+    # --- PESTAÑA 2: INSCRIPCIÓN (FILTROS BIDIRECCIONALES) ---
     with tab2:
         st.header("Inscripción de Asignaturas")
-        
-        # Función auxiliar para horarios
-        @st.cache_data(ttl=60) 
-        def get_user_schedule(user_uuid):
-            user_regs = supabase.table('registrations').select('section_id').eq('user_id', user_uuid).execute().data
-            if not user_regs: return [], []
-            section_ids = [reg['section_id'] for reg in user_regs]
-            schedule_data = supabase.table('sections').select('subject_id, day_of_week, start_time, end_time').in_('id', section_ids).execute().data
-            schedule = []
-            registered_subject_ids = []
-            for sec in schedule_data:
-                schedule.append({"day": sec['day_of_week'], "start": dt_time.fromisoformat(sec['start_time']), "end": dt_time.fromisoformat(sec['end_time'])})
-                registered_subject_ids.append(sec['subject_id'])
-            return schedule, registered_subject_ids
 
-        # Función auxiliar para conflictos
-        def check_schedule_conflict(user_schedule, new_section):
-            new_day = new_section['day_of_week']
-            new_start = dt_time.fromisoformat(new_section['start_time'])
-            new_end = dt_time.fromisoformat(new_section['end_time'])
-            for scheduled in user_schedule:
-                if scheduled['day'] == new_day:
-                    if max(scheduled['start'], new_start) < min(scheduled['end'], new_end):
-                        return True 
-            return False 
+        # Funciones Data
+        @st.cache_data(ttl=60)
+        def get_user_schedule(uid):
+            regs = supabase.table('registrations').select('section_id').eq('user_id', uid).execute().data
+            if not regs: return [], []
+            s_ids = [r['section_id'] for r in regs]
+            sch = supabase.table('sections').select('subject_id, day_of_week, start_time, end_time').in_('id', s_ids).execute().data
+            return [{"day": s['day_of_week'], "start": dt_time.fromisoformat(s['start_time']), "end": dt_time.fromisoformat(s['end_time'])} for s in sch], [s['subject_id'] for s in sch]
 
-        # --- OBTENER DATOS (AHORA INCLUYE SEMESTRE) ---
-        @st.cache_data(ttl=300) 
-        def get_all_subjects_data():
-            # Pedimos id, name, career Y semester
-            response = supabase.table('subjects').select('id, name, career, semester').order('name').execute()
-            return response.data
-        
-        subjects_data = get_all_subjects_data()
-        
+        def check_conflict(schedule, new_sec):
+            n_start, n_end = dt_time.fromisoformat(new_sec['start_time']), dt_time.fromisoformat(new_sec['end_time'])
+            for s in schedule:
+                if s['day'] == new_sec['day_of_week'] and max(s['start'], n_start) < min(s['end'], n_end): return True
+            return False
+
+        @st.cache_data(ttl=300)
+        def get_all_subjects():
+            return supabase.table('subjects').select('id, name, career, semester').order('name').execute().data
+
+        subjects_data = get_all_subjects()
+
         if not subjects_data:
-             st.warning("No hay asignaturas cargadas. Ejecuta el script de carga.")
+            st.warning("No hay datos. Carga la base de datos.")
         else:
-            # --- 1. PREPARAR LISTAS DE FILTROS ÚNICOS ---
-            unique_careers = sorted(list(set([s['career'] for s in subjects_data if s['career']])))
-            unique_semesters = sorted(list(set([s['semester'] for s in subjects_data if s['semester']])))
+            # === LÓGICA DE FILTROS CRUZADOS ===
             
-            # --- 2. MOSTRAR FILTROS (EN 2 COLUMNAS) ---
-            col_filter_career, col_filter_sem = st.columns(2)
+            # 1. Recuperar valores actuales de los filtros (si existen en session_state)
+            current_career = st.session_state.get("filter_career", "Todas")
+            current_semester_str = st.session_state.get("filter_semester", "Todos")
+
+            # 2. Calcular Opciones de CARRERA (Basado en el Semestre seleccionado)
+            if current_semester_str != "Todos":
+                sem_num = int(current_semester_str.split(" ")[1])
+                # Solo carreras que tengan ramos en ese semestre
+                valid_careers_data = [s['career'] for s in subjects_data if s['semester'] == sem_num]
+                unique_careers = sorted(list(set(valid_careers_data)))
+            else:
+                unique_careers = sorted(list(set([s['career'] for s in subjects_data if s['career']])))
             
-            with col_filter_career:
-                selected_category = st.selectbox("📂 Filtrar por Carrera:", ["Todas"] + unique_careers)
+            career_options = ["Todas"] + unique_careers
+
+            # 3. Calcular Opciones de SEMESTRE (Basado en la Carrera seleccionada)
+            if current_career != "Todas":
+                # Solo semestres disponibles para esa carrera
+                valid_semesters_data = [s['semester'] for s in subjects_data if s['career'] == current_career]
+                unique_semesters = sorted(list(set(valid_semesters_data)))
+            else:
+                unique_semesters = sorted(list(set([s['semester'] for s in subjects_data if s['semester']])))
+            
+            semester_options = ["Todos"] + [f"Semestre {s}" for s in unique_semesters]
+
+            # 4. Renderizar Widgets con las opciones calculadas
+            c_filter1, c_filter2, c_reset = st.columns([2, 2, 1])
+            
+            with c_filter1:
+                # Usamos key="filter_career" para que se guarde en session_state automáticamente
+                # index=0 fuerza a "Todas" si la opción anterior ya no es válida (ej: cambiaste de sem 8 a sem 1)
+                try:
+                    idx_car = career_options.index(current_career)
+                except ValueError:
+                    idx_car = 0 # Si la carrera seleccionada ya no es válida para el nuevo semestre, volver a Todas
                 
-            with col_filter_sem:
-                # Convertimos los números de semestre a texto "Semestre X" para que se vea bonito
-                sem_options = ["Todos"] + [f"Semestre {s}" for s in unique_semesters]
-                selected_semester_str = st.selectbox("⏳ Filtrar por Semestre:", sem_options)
+                selected_career = st.selectbox("📂 Carrera:", options=career_options, index=idx_car, key="filter_career")
 
-            # --- 3. APLICAR LÓGICA DE FILTRADO ---
-            filtered_subjects = subjects_data # Empezamos con todos
+            with c_filter2:
+                try:
+                    idx_sem = semester_options.index(current_semester_str)
+                except ValueError:
+                    idx_sem = 0
+                
+                selected_semester = st.selectbox("⏳ Semestre:", options=semester_options, index=idx_sem, key="filter_semester")
             
-            # Filtro 1: Carrera
-            if selected_category != "Todas":
-                filtered_subjects = [s for s in filtered_subjects if s['career'] == selected_category]
-            
-            # Filtro 2: Semestre
-            if selected_semester_str != "Todos":
-                # Extraemos el número del string "Semestre 5" -> 5
-                sem_num = int(selected_semester_str.split(" ")[1])
-                filtered_subjects = [s for s in filtered_subjects if s['semester'] == sem_num]
+            with c_reset:
+                st.write("") # Espacio
+                st.write("") 
+                if st.button("🔄 Reset"):
+                    del st.session_state["filter_career"]
+                    del st.session_state["filter_semester"]
+                    st.rerun()
 
-            # --- 4. SELECTOR DE ASIGNATURA FINAL ---
-            subjects_dict = {s['name']: s['id'] for s in filtered_subjects}
+            # 5. Filtrar la Lista Final de Asignaturas
+            filtered_list = subjects_data
+            if selected_career != "Todas":
+                filtered_list = [s for s in filtered_list if s['career'] == selected_career]
+            if selected_semester != "Todos":
+                sem_val = int(selected_semester.split(" ")[1])
+                filtered_list = [s for s in filtered_list if s['semester'] == sem_val]
 
-            st.markdown("##### 📚 Selecciona la Asignatura:")
-            selected_subject_name = st.selectbox(
-                "Resultados de la búsqueda:", 
-                options=subjects_dict.keys(),
-                placeholder="Selecciona un ramo...",
-                index=None,
-                label_visibility="collapsed"
-            )
-            
+            subjects_dict = {s['name']: s['id'] for s in filtered_list}
+
+            st.markdown("##### 📚 Selecciona tu Ramo:")
+            sel_subj_name = st.selectbox("Buscar:", options=subjects_dict.keys(), index=None, placeholder="Elige una asignatura...", label_visibility="collapsed")
+
             st.divider()
 
-            # --- 5. MOSTRAR SECCIONES (IGUAL QUE ANTES) ---
-            if selected_subject_name:
-                selected_subject_id = subjects_dict[selected_subject_name]
-                sections_response = supabase.table('sections').select('*').eq('subject_id', selected_subject_id).execute()
-                sections = sections_response.data
+            # --- SECCIÓN DE INSCRIPCIÓN (Igual) ---
+            if sel_subj_name:
+                sid = subjects_dict[sel_subj_name]
+                secs = supabase.table('sections').select('*').eq('subject_id', sid).execute().data
                 
-                if not sections:
-                    st.warning(f"No hay secciones abiertas para {selected_subject_name}.")
+                if not secs: st.warning("No hay secciones abiertas.")
                 else:
-                    st.subheader(f"Secciones para: {selected_subject_name}")
-                    user_schedule, registered_subject_ids = get_user_schedule(user_id)
-                    
-                    if selected_subject_id in registered_subject_ids:
-                        st.info("ℹ️ Ya tienes esta asignatura inscrita.")
+                    st.subheader(f"Secciones: {sel_subj_name}")
+                    my_sch, my_sids = get_user_schedule(user_id)
+                    if sid in my_sids: st.info("Ya tienes este ramo.")
                     else:
-                        for sec in sections:
+                        for sec in secs:
                             with st.container(border=True):
-                                c1, c2, c3, c4 = st.columns([2, 3, 2, 2])
-                                # Calcular cupos
-                                reg_count = supabase.table('registrations').select('id', count='exact').eq('section_id', sec['id']).execute().count
-                                cupos = sec['capacity'] - (reg_count if reg_count else 0)
-                                
-                                c1.markdown(f"**Sección {sec['section_code']}**")
-                                c2.text(f"📅 {sec['day_of_week']} | ⏰ {sec['start_time'][:5]} - {sec['end_time'][:5]}")
-                                c3.text(f"👨‍🏫 {sec['professor_name']}")
-                                
-                                with c4:
-                                    if cupos > 0:
-                                        if st.button(f"Inscribir (Cupos: {cupos})", key=f"btn_{sec['id']}", use_container_width=True):
-                                            if check_schedule_conflict(user_schedule, sec):
-                                                st.error("⛔ Tope de horario")
-                                            else:
-                                                try:
-                                                    supabase.table('registrations').insert({'user_id': user_id, 'section_id': sec['id']}).execute()
-                                                    st.success("✅ ¡Inscrito!")
-                                                    time.sleep(1)
-                                                    st.cache_data.clear()
-                                                    st.rerun()
-                                                except Exception as e:
-                                                    st.error(f"Error: {e}")
-                                    else:
-                                        st.button("⛔ Sin Cupos", disabled=True, key=f"dis_{sec['id']}", use_container_width=True)
+                                rc = supabase.table('registrations').select('id', count='exact').eq('section_id', sec['id']).execute().count
+                                cupos = sec['capacity'] - (rc if rc else 0)
+                                c1,c2,c3,c4 = st.columns([2,3,2,2])
+                                c1.write(f"**{sec['section_code']}**")
+                                c2.write(f"{sec['day_of_week']} {sec['start_time'][:5]}-{sec['end_time'][:5]}")
+                                c3.write(sec['professor_name'])
+                                if cupos > 0:
+                                    if c4.button(f"Inscribir ({cupos})", key=sec['id']):
+                                        if check_conflict(my_sch, sec): st.error("Tope Horario")
+                                        else:
+                                            supabase.table('registrations').insert({'user_id': user_id, 'section_id': sec['id']}).execute()
+                                            st.success("Inscrito!")
+                                            st.cache_data.clear()
+                                            st.rerun()
+                                else: c4.button("Lleno", disabled=True, key=sec['id'])
 
-        st.divider()
-        st.subheader(f"📅 Tu Horario Actual")
-        current_schedule_info, _ = get_user_schedule(user_id) 
-        if not current_schedule_info:
-            st.info("No tienes asignaturas inscritas aún.")
+        # --- HORARIO ---
+        st.subheader("Tu Horario")
+        sch, _ = get_user_schedule(user_id)
+        if not sch: st.info("Sin inscripciones.")
         else:
-            all_regs = supabase.table('registrations').select('id, sections(subject_id, section_code, day_of_week, start_time, end_time, professor_name, subjects(name))').eq('user_id', user_id).execute().data
-            
-            for reg in all_regs:
-                sec = reg['sections']
-                if sec and sec['subjects']:
-                    with st.expander(f"📘 {sec['subjects']['name']} ({sec['section_code']})"):
-                        ec1, ec2, ec3 = st.columns([3, 3, 2])
-                        ec1.write(f"**Horario:** {sec['day_of_week']} {sec['start_time'][:5]} - {sec['end_time'][:5]}")
-                        ec2.write(f"**Profesor:** {sec['professor_name']}")
-                        with ec3:
-                            if st.button("🗑️ Anular Ramo", key=f"del_{reg['id']}", type="primary"):
-                                supabase.table('registrations').delete().eq('id', reg['id']).execute()
-                                st.success("Ramo anulado.")
-                                st.cache_data.clear()
-                                st.rerun()
+            regs = supabase.table('registrations').select('id, sections(section_code, day_of_week, start_time, end_time, professor_name, subjects(name))').eq('user_id', user_id).execute().data
+            for r in regs:
+                s = r['sections']
+                with st.expander(f"📘 {s['subjects']['name']} ({s['section_code']})"):
+                    c1,c2 = st.columns([4,1])
+                    c1.write(f"{s['day_of_week']} {s['start_time'][:5]}-{s['end_time'][:5]} | Prof: {s['professor_name']}")
+                    if c2.button("Anular", key=f"del_{r['id']}", type="primary"):
+                        supabase.table('registrations').delete().eq('id', r['id']).execute()
+                        st.success("Eliminado")
+                        st.cache_data.clear()
+                        st.rerun()
 
-# --- LOGIN / REGISTRO SI NO ESTÁ AUTENTICADO ---
 else:
     authenticator.login(location='main')
+    if st.session_state["authentication_status"] is False: st.error('Datos incorrectos')
     
-    if st.session_state["authentication_status"] is False:
-        st.error('Email o contraseña incorrecta')
-    elif st.session_state["authentication_status"] is None:
-        st.info('Por favor, ingresa tus credenciales.')
-
-    st.markdown("---")
-    
-    # Recuperar contraseña
-    with st.expander("¿Olvidaste tu contraseña?"):
-        with st.form(key="forgot_password_form"):
-            email_olvidado = st.text_input("Email registrado")
-            if st.form_submit_button("Recuperar"):
-                if email_olvidado:
-                    try:
-                        redirect_url = "https://chatbot-duoc1.streamlit.app" 
-                        supabase.auth.reset_password_for_email(email_olvidado, options={'redirect_to': redirect_url})
-                        st.success("Revisa tu correo.")
-                    except Exception as e:
-                        st.error(f"Error: {e}")
-
-    # Registro en Sidebar
     with st.sidebar:
-        st.image(LOGO_BANNER_URL)
-        st.subheader("Crear Cuenta")
-        with st.form(key="register_form", clear_on_submit=True):
-            name_reg = st.text_input("Nombre")
-            email_reg = st.text_input("Email")
-            password_reg = st.text_input("Password", type="password")
-            confirm_reg = st.text_input("Confirmar Password", type="password")
-            if st.form_submit_button("Registrarse"):
-                if password_reg != confirm_reg:
-                    st.error("Claves no coinciden")
-                elif len(password_reg) < 6:
-                    st.error("Mínimo 6 caracteres")
-                else:
-                    try:
-                        hasher = stauth.Hasher()
-                        hashed_pw = hasher.hash(password_reg)
-                        supabase.table('profiles').insert({
-                            'full_name': name_reg,
-                            'email': email_reg,
-                            'password_hash': hashed_pw
-                        }).execute()
-                        st.success("¡Cuenta creada!")
-                    except Exception as e:
-                        st.error(f"Error: {e}")
+        st.subheader("Registrarse")
+        with st.form("reg"):
+            n = st.text_input("Nombre")
+            e = st.text_input("Email")
+            p = st.text_input("Pass", type="password")
+            if st.form_submit_button("Crear"):
+                h = stauth.Hasher([p]).generate()[0]
+                try:
+                    supabase.table('profiles').insert({'full_name': n, 'email': e, 'password_hash': h}).execute()
+                    st.success("Creado!")
+                except Exception as err: st.error(f"Error: {err}")
