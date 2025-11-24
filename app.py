@@ -1,4 +1,4 @@
-# Versión 8.0 (Estable: Filtros Inteligentes + Corrección Limpieza de Chat)
+# Versión 8.1 (Soft Delete: Ocultar chat pero mantener Feedback para análisis)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -135,34 +135,42 @@ if st.session_state["authentication_status"] is True:
 
     # --- PESTAÑA 1: CHATBOT ---
     with tab1:
-        # === CORRECCIÓN AQUÍ: Limpiar Feedback antes de Limpiar Chat ===
+        # === NUEVA LÓGICA DE LIMPIEZA (SOFT DELETE) ===
         if st.button("Limpiar Historial del Chat", use_container_width=True, key="clear_chat"):
-            with st.spinner("Limpiando historial..."):
-                # 1. Borrar Feedback asociado al usuario (Dependencia FK)
-                supabase.table('feedback').delete().eq('user_id', user_id).execute()
-                # 2. Borrar Historial de Chat
-                supabase.table('chat_history').delete().eq('user_id', user_id).execute()
-                
-                # 3. Resetear estado local y poner mensaje de bienvenida
-                st.session_state.messages = []
-                welcome_msg = f"¡Hola {user_name}! Tu historial ha sido limpiado. ¿En qué te puedo ayudar?"
-                res = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': welcome_msg}).execute()
-                
-                if res.data:
-                    st.session_state.messages.append({"id": res.data[0]['id'], "role": "assistant", "content": welcome_msg})
-                st.rerun()
+            with st.spinner("Archivando conversación..."):
+                try:
+                    # En lugar de .delete(), hacemos .update() poniendo is_visible = False
+                    # Esto OCULTA los mensajes pero MANTIENE el feedback en la base de datos
+                    supabase.table('chat_history').update({'is_visible': False}).eq('user_id', user_id).execute()
+                    
+                    st.session_state.messages = []
+                    
+                    # Mensaje de bienvenida nuevo
+                    welcome_msg = f"¡Hola {user_name}! Historial archivado. Los datos de feedback se han guardado."
+                    res = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': welcome_msg}).execute()
+                    
+                    if res.data:
+                        st.session_state.messages.append({"id": res.data[0]['id'], "role": "assistant", "content": welcome_msg})
+                    
+                    st.success("¡Chat limpio!")
+                    time.sleep(1)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error al limpiar: {e}")
+                    st.info("Nota: Asegúrate de haber ejecutado el SQL: ALTER TABLE chat_history ADD COLUMN is_visible BOOLEAN DEFAULT TRUE;")
         
         st.divider()
         retrieval_chain = inicializar_cadena()
 
-        # Cargar Historial
+        # Cargar Historial (SOLO LOS VISIBLES)
         if "messages" not in st.session_state:
             st.session_state.messages = []
-            history = supabase.table('chat_history').select('id, role, message').eq('user_id', user_id).order('created_at').execute()
+            # Agregamos el filtro .eq('is_visible', True)
+            history = supabase.table('chat_history').select('id, role, message').eq('user_id', user_id).eq('is_visible', True).order('created_at').execute()
+            
             for row in history.data:
                 st.session_state.messages.append({"id": row['id'], "role": row['role'], "content": row['message']})
             
-            # Si es usuario nuevo
             if not st.session_state.messages:
                 welcome_msg = f"¡Hola {user_name}! Soy tu asistente del reglamento académico. ¿En qué te puedo ayudar hoy?"
                 res = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': welcome_msg}).execute()
@@ -176,7 +184,6 @@ if st.session_state["authentication_status"] is True:
                 if msg["role"] == "assistant" and msg["id"]:
                     col_fb1, col_fb2, _ = st.columns([1,1,8])
                     
-                    # Chequear si ya votó (para visual) - Opcional, aquí solo mostramos botones simples para rapidez
                     if col_fb1.button("👍", key=f"up_{msg['id']}"):
                         supabase.table('feedback').insert({"message_id": msg['id'], "user_id": user_id, "rating": "good"}).execute()
                         st.toast("¡Gracias!")
@@ -188,6 +195,7 @@ if st.session_state["authentication_status"] is True:
         if prompt := st.chat_input("Escribe tu duda..."):
             st.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"): st.markdown(prompt)
+            # Guardamos el mensaje (por defecto is_visible=True en la BD)
             supabase.table('chat_history').insert({'user_id': user_id, 'role': 'user', 'message': prompt}).execute()
             
             with st.chat_message("assistant"):
@@ -199,11 +207,10 @@ if st.session_state["authentication_status"] is True:
             st.session_state.messages.append({"id": res_bot.data[0]['id'], "role": "assistant", "content": resp})
             st.rerun()
 
-    # --- PESTAÑA 2: INSCRIPCIÓN (FILTROS BIDIRECCIONALES) ---
+    # --- PESTAÑA 2: INSCRIPCIÓN (FILTROS INTELIGENTES) ---
     with tab2:
         st.header("Inscripción de Asignaturas")
 
-        # Funciones Data
         @st.cache_data(ttl=60)
         def get_user_schedule(uid):
             regs = supabase.table('registrations').select('section_id').eq('user_id', uid).execute().data
@@ -227,12 +234,10 @@ if st.session_state["authentication_status"] is True:
         if not subjects_data:
             st.warning("No hay datos. Carga la base de datos.")
         else:
-            # === LÓGICA DE FILTROS CRUZADOS ===
-            
+            # Lógica de Filtros Cruzados
             current_career = st.session_state.get("filter_career", "Todas")
             current_semester_str = st.session_state.get("filter_semester", "Todos")
 
-            # Calcular Opciones de CARRERA
             if current_semester_str != "Todos":
                 sem_num = int(current_semester_str.split(" ")[1])
                 valid_careers_data = [s['career'] for s in subjects_data if s['semester'] == sem_num]
@@ -242,7 +247,6 @@ if st.session_state["authentication_status"] is True:
             
             career_options = ["Todas"] + unique_careers
 
-            # Calcular Opciones de SEMESTRE
             if current_career != "Todas":
                 valid_semesters_data = [s['semester'] for s in subjects_data if s['career'] == current_career]
                 unique_semesters = sorted(list(set(valid_semesters_data)))
@@ -251,19 +255,15 @@ if st.session_state["authentication_status"] is True:
             
             semester_options = ["Todos"] + [f"Semestre {s}" for s in unique_semesters]
 
-            # Renderizar Widgets
             c_filter1, c_filter2, c_reset = st.columns([2, 2, 1])
-            
             with c_filter1:
                 try: idx_car = career_options.index(current_career)
                 except ValueError: idx_car = 0 
                 selected_career = st.selectbox("📂 Carrera:", options=career_options, index=idx_car, key="filter_career")
-
             with c_filter2:
                 try: idx_sem = semester_options.index(current_semester_str)
                 except ValueError: idx_sem = 0
                 selected_semester = st.selectbox("⏳ Semestre:", options=semester_options, index=idx_sem, key="filter_semester")
-            
             with c_reset:
                 st.write("") 
                 st.write("") 
@@ -272,7 +272,6 @@ if st.session_state["authentication_status"] is True:
                     del st.session_state["filter_semester"]
                     st.rerun()
 
-            # Filtrar Lista
             filtered_list = subjects_data
             if selected_career != "Todas":
                 filtered_list = [s for s in filtered_list if s['career'] == selected_career]
@@ -287,7 +286,6 @@ if st.session_state["authentication_status"] is True:
 
             st.divider()
 
-            # --- SECCIÓN DE INSCRIPCIÓN ---
             if sel_subj_name:
                 sid = subjects_dict[sel_subj_name]
                 secs = supabase.table('sections').select('*').eq('subject_id', sid).execute().data
@@ -316,7 +314,6 @@ if st.session_state["authentication_status"] is True:
                                             st.rerun()
                                 else: c4.button("Lleno", disabled=True, key=sec['id'])
 
-        # --- HORARIO ---
         st.subheader("Tu Horario")
         sch, _ = get_user_schedule(user_id)
         if not sch: st.info("Sin inscripciones.")
