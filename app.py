@@ -1,4 +1,4 @@
-# Versión 14.3 (FINAL: Banderas en Selector de Idioma + Login Propio + Admin Seguro)
+# Versión 14.4 (FINAL: Banderas arregladas + Todo Integrado)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -15,7 +15,7 @@ from supabase import create_client, Client
 import streamlit_authenticator as stauth
 import time
 from datetime import time as dt_time
-import bcrypt # NECESARIO PARA VERIFICAR CONTRASEÑA MANUALMENTE
+import bcrypt
 
 # --- URLs DE LOGOS ---
 LOGO_BANNER_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/a/aa/Logo_DuocUC.svg/2560px-Logo_DuocUC.svg.png"
@@ -38,14 +38,12 @@ TEXTS = {
         "tab1": "Chatbot de Reglamento",
         "tab2": "Inscripción de Asignaturas",
         "tab3": "🔒 Admin / Auditoría",
-        # Login Manual
         "login_title": "Iniciar Sesión",
         "login_user": "Correo Electrónico",
         "login_pass": "Contraseña",
         "login_btn": "Entrar",
         "login_failed": "❌ Usuario o contraseña incorrectos",
         "login_welcome": "¡Bienvenido de nuevo!",
-        # Chatbot
         "chat_clear_btn": "Limpiar Historial del Chat",
         "chat_cleaning": "Archivando conversación...",
         "chat_cleaned": "¡Chat limpio visualmente!",
@@ -59,7 +57,6 @@ TEXTS = {
         "feedback_modal_placeholder": "Ej: La respuesta es incorrecta...",
         "btn_send": "Enviar Reporte",
         "btn_cancel": "Cancelar",
-        # Inscripción
         "enroll_title": "Inscripción de Asignaturas",
         "filter_career": "📂 Carrera:",
         "filter_sem": "⏳ Semestre:",
@@ -78,7 +75,6 @@ TEXTS = {
         "no_schedule": "No tienes asignaturas inscritas aún.",
         "btn_drop": "Anular",
         "msg_dropped": "Asignatura anulada.",
-        # Admin
         "admin_title": "🕵️ Auditoría de Feedback",
         "admin_pass_label": "🔑 Contraseña de Administrador:",
         "admin_success": "🔓 Acceso Concedido",
@@ -90,13 +86,13 @@ TEXTS = {
         "col_a": "Respuesta Bot",
         "col_val": "Valoración",
         "col_com": "Comentario",
-        # Auth Sidebar
         "reg_header": "Registrarse",
         "reg_name": "Nombre Completo",
         "reg_email": "Email",
         "reg_pass": "Contraseña",
         "reg_btn": "Crear Cuenta",
         "reg_success": "¡Cuenta creada! Por favor inicia sesión.",
+        "auth_error": "Usuario o contraseña incorrectos",
         "system_prompt": """
         INSTRUCCIÓN PRINCIPAL: Responde SIEMPRE en español.
         PERSONAJE: Eres un asistente experto en el reglamento académico de Duoc UC.
@@ -110,14 +106,12 @@ TEXTS = {
         "tab1": "Rulebook Chatbot",
         "tab2": "Course Enrollment",
         "tab3": "🔒 Admin / Audit",
-        # Login Manual
         "login_title": "Login",
         "login_user": "Email Address",
         "login_pass": "Password",
         "login_btn": "Sign In",
         "login_failed": "❌ Incorrect email or password",
         "login_welcome": "Welcome back!",
-        # Chatbot
         "chat_clear_btn": "Clear Chat History",
         "chat_cleaning": "Archiving conversation...",
         "chat_cleaned": "Chat cleared visually!",
@@ -131,7 +125,6 @@ TEXTS = {
         "feedback_modal_placeholder": "Ex: The answer is incorrect...",
         "btn_send": "Send Report",
         "btn_cancel": "Cancel",
-        # Inscripción
         "enroll_title": "Course Enrollment",
         "filter_career": "📂 Career:",
         "filter_sem": "⏳ Semester:",
@@ -150,7 +143,6 @@ TEXTS = {
         "no_schedule": "No subjects enrolled yet.",
         "btn_drop": "Drop",
         "msg_dropped": "Subject dropped.",
-        # Admin
         "admin_title": "🕵️ Feedback Audit",
         "admin_pass_label": "🔑 Admin Password:",
         "admin_success": "🔓 Access Granted",
@@ -162,13 +154,13 @@ TEXTS = {
         "col_a": "Bot Answer",
         "col_val": "Rating",
         "col_com": "Comment",
-        # Auth Sidebar
         "reg_header": "Sign Up",
         "reg_name": "Full Name",
         "reg_email": "Email",
         "reg_pass": "Password",
         "reg_btn": "Create Account",
         "reg_success": "Account created! Please log in.",
+        "auth_error": "Incorrect username or password",
         "system_prompt": """
         MAIN INSTRUCTION: ALWAYS respond in English.
         CHARACTER: You are an expert assistant on the Duoc UC academic regulations.
@@ -233,21 +225,20 @@ def inicializar_cadena(language_code):
     retrieval_chain = create_retrieval_chain(retriever, document_chain)
     return retrieval_chain
 
-# --- FETCH USERS (Para verificar login) ---
+# --- FETCH USERS ---
 def fetch_all_users():
     try:
-        # Traemos todo para verificar manualmente
         response = supabase.table('profiles').select("email, full_name, password_hash").execute()
         if not response.data: return {}
-        # Convertimos a diccionario para búsqueda rápida
         users_dict = {u['email']: u for u in response.data}
         return users_dict
     except: return {}
 
-# --- SELECTOR DE IDIOMA (GLOBAL) ---
+# --- SELECTOR DE IDIOMA (CON BANDERAS) ---
 with st.sidebar:
     st.image(LOGO_BANNER_URL)
-    # === AQUI ESTÁ EL CAMBIO DE BANDERAS ===
+    
+    # === BANDERAS AGREGADAS AQUÍ ===
     lang_option = st.selectbox("🌐 Language / Idioma", ["Español 🇨🇱", "English 🇺🇸"])
     
     if lang_option == "Español 🇨🇱":
@@ -267,29 +258,27 @@ if "authentication_status" not in st.session_state:
     st.session_state["authentication_status"] = None
 
 # ==========================================
-# LÓGICA DE APP PRINCIPAL (SI ESTÁ LOGUEADO)
+# APP PRINCIPAL
 # ==========================================
 if st.session_state["authentication_status"] is True:
     user_name = st.session_state["name"]
     user_email = st.session_state["username"]
     
-    # Obtener ID de usuario
     if 'user_id' not in st.session_state:
         user_id_response = supabase.table('profiles').select('id').eq('email', user_email).execute()
         if user_id_response.data: st.session_state.user_id = user_id_response.data[0]['id']
         else: st.stop()
     user_id = st.session_state.user_id
 
-    # Header
+    # Header Logout
     c1, c2 = st.columns([0.8, 0.2])
     c1.caption(f"{t['login_success']} {user_name} ({user_email})")
     if c2.button(t["logout_btn"], use_container_width=True):
-        # Logout Manual
         st.session_state["authentication_status"] = None
         st.session_state.clear()
         st.rerun()
 
-    # --- PESTAÑAS ---
+    # Tabs
     tab1, tab2, tab3 = st.tabs([t["tab1"], t["tab2"], t["tab3"]])
 
     # --- TAB 1: CHATBOT ---
@@ -487,41 +476,30 @@ if st.session_state["authentication_status"] is True:
         elif admin_pass: st.error(t["auth_error"])
 
 # ==========================================
-# LOGIN MANUAL (Si NO está logueado)
+# LOGIN MANUAL
 # ==========================================
 else:
-    # Usamos 2 columnas para centrar un poco el login
     col_L, col_Main, col_R = st.columns([1, 2, 1])
-    
     with col_Main:
         st.subheader(t["login_title"])
-        
         with st.form("login_form"):
             input_email = st.text_input(t["login_user"])
             input_pass = st.text_input(t["login_pass"], type="password")
-            
             submit = st.form_submit_button(t["login_btn"], use_container_width=True)
-            
             if submit:
                 all_users = fetch_all_users()
-                
                 if input_email in all_users:
                     stored_hash = all_users[input_email]['password_hash']
-                    # Verificamos contraseña usando bcrypt
                     if bcrypt.checkpw(input_pass.encode('utf-8'), stored_hash.encode('utf-8')):
-                        # EXITO
                         st.session_state["authentication_status"] = True
                         st.session_state["name"] = all_users[input_email]['full_name']
                         st.session_state["username"] = input_email
                         st.toast(t["login_welcome"])
                         time.sleep(0.5)
                         st.rerun()
-                    else:
-                        st.error(t["login_failed"])
-                else:
-                    st.error(t["login_failed"])
+                    else: st.error(t["login_failed"])
+                else: st.error(t["login_failed"])
 
-    # Barra Lateral de Registro
     with st.sidebar:
         st.subheader(t["reg_header"])
         with st.form("reg"):
@@ -529,7 +507,6 @@ else:
             e = st.text_input(t["reg_email"])
             p = st.text_input(t["reg_pass"], type="password")
             if st.form_submit_button(t["reg_btn"]):
-                # Generamos hash compatible con bcrypt
                 hashed_bytes = bcrypt.hashpw(p.encode('utf-8'), bcrypt.gensalt())
                 hashed_str = hashed_bytes.decode('utf-8')
                 try:
