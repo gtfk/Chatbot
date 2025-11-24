@@ -1,4 +1,4 @@
-# Versión 14.2 (FINAL: Login 100% Traducido + Manual Auth)
+# Versión 14.3 (FINAL: Banderas en Selector de Idioma + Login Propio + Admin Seguro)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -247,9 +247,10 @@ def fetch_all_users():
 # --- SELECTOR DE IDIOMA (GLOBAL) ---
 with st.sidebar:
     st.image(LOGO_BANNER_URL)
-    lang_option = st.selectbox("🌐 Language / Idioma", ["Español", "English"])
+    # === AQUI ESTÁ EL CAMBIO DE BANDERAS ===
+    lang_option = st.selectbox("🌐 Language / Idioma", ["Español 🇨🇱", "English 🇺🇸"])
     
-    if lang_option == "Español":
+    if lang_option == "Español 🇨🇱":
         lang = "es"
     else:
         lang = "en"
