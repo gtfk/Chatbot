@@ -1,4 +1,4 @@
-# Versión 17.0 (FINAL: Tema vía Config.toml + Emojis Fix + Todo Integrado)
+# Versión 17.1 (FINAL: Textos Corregidos + Tema vía Config.toml + Emojis Fix)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -86,9 +86,9 @@ TEXTS = {
         "login_title": "Iniciar Sesión",
         "login_user": "Correo Institucional",
         "login_pass": "Contraseña",
-        "login_btn": "Ingresar al Portal",
+        "login_btn": "Ingresar", # CAMBIADO (Antes: Ingresar al Portal)
         "login_failed": "❌ Credenciales inválidas",
-        "login_welcome": "¡Bienvenido a la Intranet!",
+        "login_welcome": "¡Bienvenido al Asistente!", # CAMBIADO (Antes: Bienvenido a la Intranet)
         "chat_clear_btn": "🧹 Limpiar Conversación",
         "chat_cleaning": "Procesando solicitud...",
         "chat_cleaned": "¡Historial limpiado!",
@@ -155,9 +155,9 @@ TEXTS = {
         "login_title": "Student Login",
         "login_user": "Institutional Email",
         "login_pass": "Password",
-        "login_btn": "Enter Portal",
+        "login_btn": "Login", # CAMBIADO
         "login_failed": "❌ Invalid credentials",
-        "login_welcome": "Welcome to the Intranet!",
+        "login_welcome": "Welcome to the Assistant!", # CAMBIADO
         "chat_clear_btn": "🧹 Clear Conversation",
         "chat_cleaning": "Processing...",
         "chat_cleaned": "History cleared!",
