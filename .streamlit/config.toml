@@ -1,6 +1,6 @@
 [theme]
 base="dark"
-primaryColor="#FFB81C"        # Amarillo Duoc
+primaryColor="#002342"        # Azul Duoc (Color principal cambiado a Azul)
 backgroundColor="#212529"     # Gris Carbón
 secondaryBackgroundColor="#001529" # Azul Noche
 textColor="#F8F9FA"           # Blanco

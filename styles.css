@@ -1,52 +1,46 @@
-/* 1. Importamos fuente de emojis de Google y fuentes base */
+/* 1. Importamos fuente de emojis de Google */
 @import url('https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&family=Source+Sans+Pro:wght@400;600;700&display=swap');
 
-/* 2. Aplicamos fuente SOLO a elementos de texto seguros */
-/* Esto evita romper los iconos del sistema de Streamlit (flechas, X, etc.) */
+/* 2. Aplicamos fuente a textos */
 .stMarkdown p, .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown li, 
 .stTextInput input, .stTextArea textarea, .stSelectbox div, .stButton button, 
 p, span, label {
     font-family: 'Source Sans Pro', 'Noto Color Emoji', sans-serif !important;
 }
 
-/* 3. Ajuste para BOTONES (Amarillo con texto Azul Oscuro) */
-/* Importante: !important asegura que se sobreescriba el tema oscuro por defecto */
+/* 3. AJUSTE DE BOTONES (AZULES PARA MEJOR CONTRASTE) */
 div.stButton > button {
-    background-color: #FFB81C !important; /* Amarillo Duoc */
-    color: #002342 !important;            /* Azul Oscuro */
+    background-color: #002342 !important; /* Azul Duoc (Fondo Oscuro) */
+    color: #FFFFFF !important;            /* Texto Blanco (Resalta emojis amarillos) */
     font-weight: bold !important;
     border-radius: 6px !important;
-    border: none !important;
+    border: 1px solid #FFB81C !important; /* Borde Amarillo sutil */
 }
 
-/* Efecto Hover en botones */
 div.stButton > button:hover {
-    background-color: #E5A500 !important; 
-    color: #000000 !important;
+    background-color: #003366 !important; /* Azul un poco más claro al pasar mouse */
+    border-color: #FFFFFF !important;
     transform: scale(1.02);
 }
 
-/* 4. Burbujas de chat personalizadas (Tema Oscuro Suave) */
-/* Mensaje del Usuario */
+/* 4. Burbujas de chat */
 [data-testid="stChatMessage"] {
     background-color: #2C3E50;
     border: 1px solid #34495E;
     border-radius: 12px;
 }
-/* Mensaje del Asistente */
 div[data-testid="chatAvatarIcon-assistant"] + div {
     background-color: #343A40;
     border: 1px solid #495057;
     border-radius: 12px;
 }
 
-/* 5. Ajuste del sidebar para que el texto sea legible */
+/* 5. Sidebar */
 [data-testid="stSidebar"] p, [data-testid="stSidebar"] span, [data-testid="stSidebar"] label {
-    color: #FFFFFF !important; /* Blanco para contrastar con el azul oscuro */
+    color: #FFFFFF !important;
 }
 
-/* 6. Contenedor del Logo en Sidebar */
-/* Crea una cajita blanca detrás del logo para que se vean las letras oscuras */
+/* 6. Contenedor del Logo */
 .sidebar-logo-container {
     background-color: white;
     padding: 15px;
