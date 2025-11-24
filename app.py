@@ -1,4 +1,4 @@
-# Versión 15.0 (FINAL: Estilo Light "Duoc UC" + Fuente Calibri + Emojis Fix + Todo Integrado)
+# Versión 16.0 (FINAL: Tema Oscuro "Soft" + Emojis Visibles + Todo Integrado)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -29,68 +29,83 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- CSS GLOBAL: ESTILO "LIGHT" CORPORATIVO + FUENTE CALIBRI + EMOJIS ---
+# --- CSS GLOBAL: TEMA OSCURO SUAVE (SOFT DARK) ---
 st.markdown("""
     <style>
-    /* 1. Importamos fuente de emojis de Google para compatibilidad */
-    @import url('https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap');
+    /* 1. Fuente Global y Emojis (Google Style) - CRÍTICO PARA QUE SE VEAN BIEN */
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&family=Source+Sans+Pro:wght@400;600;700&display=swap');
     
-    /* 2. Aplicamos Calibri/Segoe UI a TODA la app y forzamos color Azul Oscuro */
     html, body, [class*="st-"], .stMarkdown, .stButton, .stSelectbox, .stTextInput, .stTextArea {
-        font-family: 'Calibri', 'Segoe UI', 'Roboto', 'Noto Color Emoji', sans-serif !important;
-        color: #002342 !important; /* Azul Duoc */
+        font-family: 'Source Sans Pro', 'Noto Color Emoji', 'Segoe UI Emoji', 'Apple Color Emoji', sans-serif !important;
     }
 
-    /* 3. Fondo Principal Blanco Puro */
+    /* 2. Fondo Principal: Gris Carbón Suave (Evita el negro puro) */
     .stApp {
-        background-color: #FFFFFF;
+        background-color: #212529; 
+        color: #F8F9FA; /* Texto Blanco Hueso */
     }
 
-    /* 4. Ajuste de Inputs (Cajas de texto y selectores) */
+    /* 3. Títulos y Cabeceras (Amarillo Duoc para destacar o Blanco) */
+    h1, h2, h3 {
+        color: #FFB81C !important; /* Amarillo Duoc para títulos */
+    }
+    p, label, div {
+        color: #E9ECEF; /* Texto general claro */
+    }
+
+    /* 4. Ajuste de Inputs (Cajas de texto gris oscuro) */
     .stTextInput input, .stSelectbox div[data-baseweb="select"], .stTextArea textarea {
-        background-color: #FFFFFF !important;
-        color: #002342 !important;
-        border: 1px solid #ced4da !important;
+        background-color: #343A40 !important; /* Gris más claro que el fondo */
+        color: #FFFFFF !important;
+        border: 1px solid #495057 !important;
         border-radius: 8px !important;
     }
+    /* Texto dentro de los selectores */
+    .stSelectbox div[data-baseweb="select"] span {
+        color: #FFFFFF !important;
+    }
     
-    /* 5. Botones: Amarillo Duoc con Texto Azul */
+    /* 5. Botones: Amarillo Duoc (Contraste alto) */
     div.stButton > button {
-        background-color: #FFB81C; /* Amarillo */
-        color: #002342; /* Texto Azul */
+        background-color: #FFB81C; 
+        color: #002342; /* Texto Azul Oscuro para lectura fácil */
         border: none;
         font-weight: bold;
         border-radius: 6px;
         transition: all 0.3s ease;
     }
     div.stButton > button:hover {
-        background-color: #E5A500; /* Amarillo más oscuro al pasar mouse */
+        background-color: #FFC107; 
+        color: #000000;
         transform: scale(1.02);
     }
     
-    /* 6. Estilo del Chat: Burbujas diferenciadas y limpias */
-    /* Mensaje del Usuario (Gris claro) */
+    /* 6. Estilo del Chat: Burbujas Oscuras pero Diferenciadas */
+    /* Mensaje del Usuario (Azul Noche) */
     [data-testid="stChatMessage"] {
-        background-color: #F0F2F6;
-        border: 1px solid #E6E9EF;
+        background-color: #2C3E50;
+        border: 1px solid #34495E;
         border-radius: 12px;
     }
-    /* Mensaje del Asistente (Azul muy tenue corporativo) */
+    /* Mensaje del Asistente (Gris Oscuro) */
     div[data-testid="chatAvatarIcon-assistant"] + div {
-        background-color: #E8F4FD;
-        border: 1px solid #D1E8FA;
+        background-color: #343A40;
+        border: 1px solid #495057;
         border-radius: 12px;
     }
 
-    /* 7. Sidebar (Gris muy claro para contraste suave) */
+    /* 7. Sidebar (Azul Duoc Muy Oscuro) */
     [data-testid="stSidebar"] {
-        background-color: #F8F9FA;
-        border-right: 1px solid #DEE2E6;
+        background-color: #001529; /* Azul muy oscuro casi negro */
+        border-right: 1px solid #2C3E50;
     }
-    
-    /* 8. Pestañas (Tabs) */
-    .stTabs [data-baseweb="tab-list"] button [data-testid="stMarkdownContainer"] p {
-        font-size: 1.1rem;
+    [data-testid="stSidebar"] * {
+        color: #DEE2E6 !important;
+    }
+
+    /* 8. Tablas (Dataframes) - Ajuste para fondo oscuro */
+    [data-testid="stDataFrame"] {
+        background-color: #343A40;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -101,138 +116,138 @@ TEXTS = {
         "label": "Español 🇨🇱",
         "title": "Asistente Académico Duoc UC",
         "sidebar_lang": "Idioma / Language",
-        "login_success": "Conectado como:",
+        "login_success": "Usuario:",
         "logout_btn": "Cerrar Sesión",
-        "tab1": "Chatbot de Reglamento",
-        "tab2": "Inscripción de Asignaturas",
-        "tab3": "🔒 Admin / Auditoría",
+        "tab1": "💬 Chatbot Reglamento",
+        "tab2": "📅 Inscripción de Asignaturas",
+        "tab3": "🔐 Admin / Auditoría",
         "login_title": "Iniciar Sesión",
-        "login_user": "Correo Electrónico",
+        "login_user": "Correo Institucional",
         "login_pass": "Contraseña",
-        "login_btn": "Entrar",
-        "login_failed": "❌ Usuario o contraseña incorrectos",
-        "login_welcome": "¡Bienvenido de nuevo!",
-        "chat_clear_btn": "Limpiar Historial del Chat",
-        "chat_cleaning": "Archivando conversación...",
-        "chat_cleaned": "¡Chat limpio visualmente!",
-        "chat_welcome": "¡Hola {name}! 👋 Soy tu asistente del reglamento académico. ¿En qué te puedo ayudar hoy?",
-        "chat_welcome_clean": "¡Hola {name}! Historial archivado. Feedback guardado. 👍",
-        "chat_placeholder": "Escribe tu duda sobre el reglamento...",
+        "login_btn": "Ingresar al Portal",
+        "login_failed": "❌ Credenciales inválidas",
+        "login_welcome": "¡Bienvenido a la Intranet!",
+        "chat_clear_btn": "🧹 Limpiar Conversación",
+        "chat_cleaning": "Procesando solicitud...",
+        "chat_cleaned": "¡Historial limpiado!",
+        "chat_welcome": "¡Hola **{name}**! 👋 Soy tu asistente virtual de Duoc UC. Pregúntame sobre el reglamento, asistencia o notas.",
+        "chat_welcome_clean": "¡Hola **{name}**! El historial ha sido archivado. ¿En qué más te ayudo?",
+        "chat_placeholder": "Ej: ¿Con qué nota apruebo el ramo?",
         "chat_thinking": "Consultando reglamento...",
-        "feedback_thanks": "¡Gracias por tu valoración! ⭐",
-        "feedback_report_sent": "Reporte enviado. ¡Gracias!",
-        "feedback_modal_title": "Cuéntanos, ¿qué salió mal?",
-        "feedback_modal_placeholder": "Ej: La respuesta es incorrecta...",
-        "btn_send": "Enviar Reporte",
-        "btn_cancel": "Cancelar",
-        "enroll_title": "Inscripción de Asignaturas",
-        "filter_career": "📂 Carrera:",
-        "filter_sem": "⏳ Semestre:",
-        "filter_all": "Todas",
-        "filter_all_m": "Todos",
-        "reset_btn": "🔄 Resetear Filtros",
-        "search_label": "📚 Selecciona tu Ramo:",
-        "search_placeholder": "Elige una asignatura...",
-        "sec_title": "Secciones para:",
+        "feedback_thanks": "¡Gracias por tu feedback! 👍",
+        "feedback_report_sent": "Reporte enviado al área académica.",
+        "feedback_modal_title": "¿Qué podemos mejorar?",
+        "feedback_modal_placeholder": "Ej: La información sobre asistencia no es precisa...",
+        "btn_send": "Enviar Comentario",
+        "btn_cancel": "Omitir",
+        "enroll_title": "Toma de Ramos 2025",
+        "filter_career": "📂 Filtrar por Carrera:",
+        "filter_sem": "⏳ Filtrar por Semestre:",
+        "filter_all": "Todas las Carreras",
+        "filter_all_m": "Todos los Semestres",
+        "reset_btn": "🔄 Limpiar Filtros",
+        "search_label": "📚 Buscar Asignatura:",
+        "search_placeholder": "Escribe el nombre del ramo...",
+        "sec_title": "Secciones Disponibles para:",
         "btn_enroll": "Inscribir",
-        "btn_full": "Lleno",
-        "msg_enrolled": "✅ ¡Inscrito correctamente!",
-        "msg_conflict": "⛔ Tope de Horario",
-        "msg_already": "ℹ️ Ya tienes esta asignatura.",
-        "my_schedule": "Tu Horario Actual",
-        "no_schedule": "No tienes asignaturas inscritas aún.",
-        "btn_drop": "Anular",
-        "msg_dropped": "Asignatura anulada.",
-        "admin_title": "🕵️ Auditoría de Feedback",
-        "admin_pass_label": "🔑 Contraseña de Administrador:",
-        "admin_success": "🔓 Acceso Concedido",
-        "admin_info": "Visualizando feedback completo con la pregunta original.",
-        "admin_update_btn": "🔄 Actualizar Tabla",
-        "col_date": "Fecha",
+        "btn_full": "Sin Cupos",
+        "msg_enrolled": "✅ ¡Asignatura inscrita exitosamente!",
+        "msg_conflict": "⛔ Error: Tope de Horario detectado",
+        "msg_already": "ℹ️ Ya estás inscrito en esta asignatura.",
+        "my_schedule": "Tu Carga Académica",
+        "no_schedule": "No tienes ramos inscritos.",
+        "btn_drop": "Anular Ramo",
+        "msg_dropped": "Asignatura eliminada de tu carga.",
+        "admin_title": "Panel de Control (Admin)",
+        "admin_pass_label": "Clave de Acceso:",
+        "admin_success": "Acceso Autorizado",
+        "admin_info": "Registro de interacciones y feedback negativo.",
+        "admin_update_btn": "🔄 Refrescar Datos",
+        "col_date": "Fecha/Hora",
         "col_status": "Estado",
-        "col_q": "Pregunta Alumno",
-        "col_a": "Respuesta Bot",
-        "col_val": "Valoración",
-        "col_com": "Comentario",
-        "reg_header": "Registrarse",
-        "reg_name": "Nombre Completo",
-        "reg_email": "Email",
-        "reg_pass": "Contraseña",
-        "reg_btn": "Crear Cuenta",
-        "reg_success": "¡Cuenta creada! Por favor inicia sesión.",
-        "auth_error": "Usuario o contraseña incorrectos",
+        "col_q": "Pregunta Estudiante",
+        "col_a": "Respuesta IA",
+        "col_val": "Eval",
+        "col_com": "Detalle",
+        "reg_header": "Crear Cuenta Alumno",
+        "reg_name": "Nombre y Apellido",
+        "reg_email": "Correo Duoc",
+        "reg_pass": "Crear Contraseña",
+        "reg_btn": "Registrarse",
+        "reg_success": "¡Cuenta creada! Accede desde el Login.",
+        "auth_error": "Verifica tus datos.",
         "system_prompt": """
-        INSTRUCCIÓN PRINCIPAL: Responde SIEMPRE en español formal pero cercano.
-        PERSONAJE: Eres un asistente experto en el reglamento académico de Duoc UC.
+        INSTRUCCIÓN: Responde en Español formal pero cercano.
+        ROL: Eres un coordinador académico de Duoc UC.
         """
     },
     "en": {
         "label": "English 🇺🇸",
         "title": "Duoc UC Academic Assistant",
         "sidebar_lang": "Language / Idioma",
-        "login_success": "Logged in as:",
-        "logout_btn": "Logout",
-        "tab1": "Rulebook Chatbot",
-        "tab2": "Course Enrollment",
-        "tab3": "🔒 Admin / Audit",
-        "login_title": "Login",
-        "login_user": "Email Address",
+        "login_success": "User:",
+        "logout_btn": "Log Out",
+        "tab1": "💬 Rulebook Chat",
+        "tab2": "📅 Course Enrollment",
+        "tab3": "🔐 Admin / Audit",
+        "login_title": "Student Login",
+        "login_user": "Institutional Email",
         "login_pass": "Password",
-        "login_btn": "Sign In",
-        "login_failed": "❌ Incorrect email or password",
-        "login_welcome": "Welcome back!",
-        "chat_clear_btn": "Clear Chat History",
-        "chat_cleaning": "Archiving conversation...",
-        "chat_cleaned": "Chat cleared visually!",
-        "chat_welcome": "Hello {name}! 👋 I am your academic rulebook assistant. How can I help you today?",
-        "chat_welcome_clean": "Hello {name}! History archived. Feedback saved. 👍",
-        "chat_placeholder": "Ask your question about the regulations...",
-        "chat_thinking": "Thinking...",
-        "feedback_thanks": "Thanks for your feedback! ⭐",
-        "feedback_report_sent": "Report sent. Thanks!",
-        "feedback_modal_title": "Tell us, what went wrong?",
-        "feedback_modal_placeholder": "Ex: The answer is incorrect...",
-        "btn_send": "Send Report",
-        "btn_cancel": "Cancel",
-        "enroll_title": "Course Enrollment",
-        "filter_career": "📂 Career:",
-        "filter_sem": "⏳ Semester:",
-        "filter_all": "All",
-        "filter_all_m": "All",
-        "reset_btn": "🔄 Reset Filters",
-        "search_label": "📚 Select your Subject:",
-        "search_placeholder": "Choose a subject...",
-        "sec_title": "Sections for:",
+        "login_btn": "Enter Portal",
+        "login_failed": "❌ Invalid credentials",
+        "login_welcome": "Welcome to the Intranet!",
+        "chat_clear_btn": "🧹 Clear Conversation",
+        "chat_cleaning": "Processing...",
+        "chat_cleaned": "History cleared!",
+        "chat_welcome": "Hello **{name}**! 👋 I'm your Duoc UC virtual assistant. Ask me about regulations, attendance, or grades.",
+        "chat_welcome_clean": "Hello **{name}**! History archived. Can I help with anything else?",
+        "chat_placeholder": "Ex: What is the passing grade?",
+        "chat_thinking": "Consulting rulebook...",
+        "feedback_thanks": "Thanks for your feedback! 👍",
+        "feedback_report_sent": "Report sent to academic area.",
+        "feedback_modal_title": "What went wrong?",
+        "feedback_modal_placeholder": "Ex: The information is inaccurate...",
+        "btn_send": "Send Comment",
+        "btn_cancel": "Skip",
+        "enroll_title": "Course Registration 2025",
+        "filter_career": "📂 Filter by Career:",
+        "filter_sem": "⏳ Filter by Semester:",
+        "filter_all": "All Careers",
+        "filter_all_m": "All Semesters",
+        "reset_btn": "🔄 Clear Filters",
+        "search_label": "📚 Search Subject:",
+        "search_placeholder": "Type subject name...",
+        "sec_title": "Available Sections for:",
         "btn_enroll": "Enroll",
         "btn_full": "Full",
-        "msg_enrolled": "✅ Enrolled successfully!",
-        "msg_conflict": "⛔ Schedule Conflict",
-        "msg_already": "ℹ️ You already have this subject.",
-        "my_schedule": "Your Current Schedule",
-        "no_schedule": "No subjects enrolled yet.",
-        "btn_drop": "Drop",
-        "msg_dropped": "Subject dropped.",
-        "admin_title": "🕵️ Feedback Audit",
-        "admin_pass_label": "🔑 Admin Password:",
-        "admin_success": "🔓 Access Granted",
-        "admin_info": "Viewing full feedback with original user question.",
-        "admin_update_btn": "🔄 Refresh Table",
-        "col_date": "Date",
+        "msg_enrolled": "✅ Subject enrolled successfully!",
+        "msg_conflict": "⛔ Error: Schedule Conflict",
+        "msg_already": "ℹ️ You are already enrolled.",
+        "my_schedule": "Your Academic Load",
+        "no_schedule": "No subjects enrolled.",
+        "btn_drop": "Drop Course",
+        "msg_dropped": "Subject removed from load.",
+        "admin_title": "Control Panel (Admin)",
+        "admin_pass_label": "Access Key:",
+        "admin_success": "Access Granted",
+        "admin_info": "Log of interactions and negative feedback.",
+        "admin_update_btn": "🔄 Refresh Data",
+        "col_date": "Date/Time",
         "col_status": "Status",
         "col_q": "Student Question",
-        "col_a": "Bot Answer",
-        "col_val": "Rating",
-        "col_com": "Comment",
-        "reg_header": "Sign Up",
+        "col_a": "AI Answer",
+        "col_val": "Rate",
+        "col_com": "Detail",
+        "reg_header": "Create Student Account",
         "reg_name": "Full Name",
-        "reg_email": "Email",
-        "reg_pass": "Password",
-        "reg_btn": "Create Account",
-        "reg_success": "Account created! Please log in.",
-        "auth_error": "Incorrect username or password",
+        "reg_email": "Duoc Email",
+        "reg_pass": "Create Password",
+        "reg_btn": "Register",
+        "reg_success": "Account created! Please login.",
+        "auth_error": "Check your credentials.",
         "system_prompt": """
-        MAIN INSTRUCTION: ALWAYS respond in English.
-        CHARACTER: You are an expert assistant on the Duoc UC academic regulations.
+        INSTRUCTION: Respond in English, formal but friendly.
+        ROLE: You are an academic coordinator at Duoc UC.
         """
     }
 }
@@ -306,19 +321,9 @@ def fetch_all_users():
 # --- SELECTOR DE IDIOMA ---
 with st.sidebar:
     st.image(LOGO_BANNER_URL)
-    # Selector de idioma con banderas
-    lang_option = st.selectbox(
-        "🌐 Language / Idioma", 
-        ["Español 🇨🇱", "English 🇺🇸"],
-        format_func=lambda x: TEXTS["es" if "Español" in x else "en"]["label"]
-    )
-    
-    # Lógica para asignar código de idioma
-    if "Español" in lang_option:
-        lang_code = "es"
-    else:
-        lang_code = "en"
-    
+    lang_option = st.selectbox("🌐 Language / Idioma", ["Español 🇨🇱", "English 🇺🇸"], format_func=lambda x: TEXTS["es" if "Español" in x else "en"]["label"])
+    if "Español" in lang_option: lang_code = "es"
+    else: lang_code = "en"
     t = TEXTS[lang_code]
 
 # --- CABECERA ---
@@ -395,7 +400,6 @@ if st.session_state["authentication_status"] is True:
                     reason_key = f"show_reason_{msg['id']}"
                     if col_fb2.button("👎", key=f"down_{msg['id']}"): st.session_state[reason_key] = True
                     if st.session_state.get(reason_key, False):
-                        # Formulario de Feedback Negativo (Sin envío con Enter)
                         with st.form(key=f"form_{msg['id']}", enter_to_submit=False):
                             st.write(t["feedback_modal_title"])
                             comment_text = st.text_area("...", placeholder=t["feedback_modal_placeholder"], label_visibility="collapsed")
