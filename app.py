@@ -1,4 +1,4 @@
-# Versión 28.0 (FINAL: Fix Recuperación Contraseña + CSS Externo + Todo Integrado)
+# Versión 28.0 (FINAL: Modo Debug Login + Auto-Reparación Perfil + Todo Integrado)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -27,39 +27,13 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ==============================================================================
-# 1. PUENTE JAVASCRIPT (CRÍTICO PARA RECUPERAR CONTRASEÑA)
-# ==============================================================================
-# Este script convierte el fragmento de URL (#access_token=...) en parámetros (?access_token=...)
-# para que Streamlit (Python) pueda leerlos.
-st.markdown("""
-<script>
-// Verifica si hay un hash con token en la URL (típico de Supabase Magic Link)
-if (window.location.hash && window.location.hash.includes('access_token')) {
-    // Convierte el hash en parámetros de búsqueda
-    const hashParams = new URLSearchParams(window.location.hash.substring(1));
-    const newUrl = new URL(window.location.href);
-    
-    hashParams.forEach((value, key) => {
-        newUrl.searchParams.set(key, value);
-    });
-    
-    // Borra el hash para limpiar la URL visualmente
-    newUrl.hash = '';
-    
-    // Recarga la página con los nuevos parámetros que Python sí puede leer
-    window.location.href = newUrl.toString();
-}
-</script>
-""", unsafe_allow_html=True)
-
 # --- CARGAR CSS DESDE ARCHIVO EXTERNO ---
 def load_css(file_name):
     try:
         with open(file_name) as f:
             st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
     except FileNotFoundError:
-        st.error(f"⚠️ No se encontró el archivo {file_name}.")
+        st.error(f"⚠️ No se encontró el archivo {file_name}. Asegúrate de que esté en la misma carpeta que app.py.")
 
 load_css("styles.css")
 
@@ -68,6 +42,7 @@ TEXTS = {
     "es": {
         "label": "Español 🇨🇱",
         "title": "Asistente Académico Duoc UC",
+        "sidebar_lang": "Idioma / Language",
         "login_success": "Usuario:",
         "logout_btn": "Cerrar Sesión",
         "tab1": "💬 Chatbot Reglamento",
@@ -82,20 +57,24 @@ TEXTS = {
         "forgot_header": "¿Olvidaste tu contraseña?",
         "forgot_email": "Ingresa tu correo registrado",
         "forgot_btn": "Recuperar Contraseña",
-        "forgot_success": "✅ Enlace enviado. Revisa tu correo.",
-        "reset_title": "⚠️ Restablecer Contraseña",
-        "reset_msg": "Has ingresado con un enlace de recuperación. Por seguridad, crea una nueva contraseña ahora.",
+        "forgot_success": "✅ Si el correo existe, te hemos enviado un enlace mágico.",
+        "reset_title": "Restablecer Contraseña",
         "reset_pass_new": "Nueva Contraseña",
         "reset_btn_final": "Guardar Nueva Contraseña",
-        "reset_success": "✅ Contraseña actualizada exitosamente.",
+        "reset_success": "✅ Contraseña actualizada. Inicia sesión con tu nueva clave.",
         "chat_clear_btn": "🧹 Limpiar Conversación",
+        "chat_cleaning": "Procesando solicitud...",
         "chat_cleaned": "¡Historial limpiado!",
         "chat_welcome": "¡Hola **{name}**! 👋 Soy tu asistente virtual de Duoc UC.",
-        "feedback_thanks": "¡Gracias! 👍",
+        "chat_welcome_clean": "¡Hola **{name}**! El historial ha sido archivado.",
+        "chat_placeholder": "Ej: ¿Con qué nota apruebo el ramo?",
+        "chat_thinking": "Consultando reglamento...",
+        "feedback_thanks": "¡Gracias por tu feedback! 👍",
         "feedback_report_sent": "Reporte enviado.",
         "feedback_modal_title": "¿Qué podemos mejorar?",
-        "btn_send": "Enviar",
-        "btn_cancel": "Cancelar",
+        "feedback_modal_placeholder": "Ej: La respuesta no es precisa...",
+        "btn_send": "Enviar Comentario",
+        "btn_cancel": "Omitir",
         "enroll_title": "Toma de Ramos 2025",
         "filter_career": "📂 Filtrar por Carrera:",
         "filter_sem": "⏳ Filtrar por Semestre:",
@@ -103,26 +82,41 @@ TEXTS = {
         "filter_all_m": "Todos los Semestres",
         "reset_btn": "🔄 Limpiar Filtros",
         "search_label": "📚 Buscar Asignatura:",
+        "search_placeholder": "Escribe el nombre del ramo...",
+        "sec_title": "Secciones Disponibles para:",
         "btn_enroll": "Inscribir",
-        "msg_enrolled": "✅ ¡Inscrito!",
-        "msg_conflict": "⛔ Tope de Horario",
-        "msg_already": "ℹ️ Ya inscrito.",
+        "btn_full": "Sin Cupos",
+        "msg_enrolled": "✅ ¡Inscrito exitosamente!",
+        "msg_conflict": "⛔ Error: Tope de Horario",
+        "msg_already": "ℹ️ Ya estás inscrito.",
         "my_schedule": "Tu Carga Académica",
         "no_schedule": "No tienes ramos inscritos.",
-        "btn_drop": "Anular",
+        "btn_drop": "Anular Ramo",
+        "msg_dropped": "Asignatura eliminada.",
         "admin_title": "Panel de Control (Admin)",
         "admin_pass_label": "Clave de Acceso:",
+        "admin_success": "Acceso Autorizado",
+        "admin_info": "Registro de auditoría.",
+        "admin_update_btn": "🔄 Refrescar Datos",
+        "col_date": "Fecha",
+        "col_status": "Estado",
+        "col_q": "Pregunta",
+        "col_a": "Respuesta",
+        "col_val": "Eval",
+        "col_com": "Detalle",
         "reg_header": "Crear Cuenta Alumno",
         "reg_name": "Nombre y Apellido",
         "reg_email": "Correo Duoc",
         "reg_pass": "Crear Contraseña",
         "reg_btn": "Registrarse",
-        "reg_success": "¡Cuenta creada!",
+        "reg_success": "¡Cuenta creada! Revisa tu correo para confirmar.",
+        "auth_error": "Verifica tus datos.",
         "system_prompt": "INSTRUCCIÓN: Responde en Español formal pero cercano. ROL: Coordinador académico Duoc UC."
     },
     "en": {
         "label": "English 🇺🇸",
         "title": "Duoc UC Academic Assistant",
+        "sidebar_lang": "Language / Idioma",
         "login_success": "User:",
         "logout_btn": "Log Out",
         "tab1": "💬 Rulebook Chat",
@@ -138,11 +132,10 @@ TEXTS = {
         "forgot_email": "Registered email",
         "forgot_btn": "Recover",
         "forgot_success": "✅ Link sent.",
-        "reset_title": "⚠️ Reset Password",
-        "reset_msg": "You logged in via recovery link. Please set a new password.",
+        "reset_title": "Reset Password",
         "reset_pass_new": "New Password",
         "reset_btn_final": "Save Password",
-        "reset_success": "✅ Password updated successfully.",
+        "reset_success": "✅ Password updated.",
         "chat_clear_btn": "🧹 Clear Chat",
         "chat_cleaned": "Cleared!",
         "chat_welcome": "Hello **{name}**! 👋",
@@ -165,14 +158,17 @@ TEXTS = {
         "my_schedule": "Your Load",
         "no_schedule": "Empty.",
         "btn_drop": "Drop",
+        "msg_dropped": "Subject removed.",
         "admin_title": "Admin Panel",
         "admin_pass_label": "Admin Key:",
+        "admin_success": "Access Granted",
         "reg_header": "Sign Up",
         "reg_name": "Name",
         "reg_email": "Email",
         "reg_pass": "Password",
         "reg_btn": "Register",
-        "reg_success": "Created!",
+        "reg_success": "Created! Check email.",
+        "auth_error": "Check credentials.",
         "system_prompt": "INSTRUCTION: Respond in English. ROLE: Academic coordinator Duoc UC."
     }
 }
@@ -214,13 +210,25 @@ def inicializar_cadena(language_code):
     retriever = EnsembleRetriever(retrievers=[bm25_retriever, vector_retriever], weights=[0.7, 0.3])
     llm = ChatGroq(api_key=GROQ_API_KEY, model="llama-3.1-8b-instant", temperature=0.1)
     
-    prompt_template = TEXTS[language_code]["system_prompt"] + """
-    CONTEXT: {context}
-    QUESTION: {input}
+    base_instruction = TEXTS[language_code]["system_prompt"]
+    
+    prompt_template = base_instruction + """
+    RULES:
+    1. Address {user_name} by name.
+    2. Be clear and concise.
+    3. Base answer ONLY on context.
+    4. Cite the article (e.g. "Article N°30").
+
+    CONTEXT:
+    {context}
+    QUESTION FROM {user_name}:
+    {input}
     ANSWER:
     """
     prompt = ChatPromptTemplate.from_template(prompt_template)
-    return create_retrieval_chain(retriever, create_stuff_documents_chain(llm, prompt))
+    document_chain = create_stuff_documents_chain(llm, prompt)
+    retrieval_chain = create_retrieval_chain(retriever, document_chain)
+    return retrieval_chain
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -231,7 +239,8 @@ with st.sidebar:
     """, unsafe_allow_html=True)
     
     lang_option = st.selectbox("🌐 Language / Idioma", ["Español 🇨🇱", "English 🇺🇸"], format_func=lambda x: TEXTS["es" if "Español" in x else "en"]["label"])
-    lang_code = "es" if "Español" in lang_option else "en"
+    if "Español" in lang_option: lang_code = "es"
+    else: lang_code = "en"
     t = TEXTS[lang_code]
 
 # --- CABECERA ---
@@ -239,87 +248,38 @@ c1, c2 = st.columns([0.1, 0.9])
 with c1: st.image(LOGO_ICON_URL, width=70)
 with c2: st.title(t["title"])
 
-# --- ESTADO DE SESIÓN ---
+# --- AUTO-LOGIN & RECOVERY CHECK ---
 if "authentication_status" not in st.session_state:
     st.session_state["authentication_status"] = None
 
-# ==============================================================================
-# 2. LÓGICA DE RECUPERACIÓN DE CONTRASEÑA (Intercepta parámetros)
-# ==============================================================================
-# Si el JS hizo su trabajo, ahora tenemos 'access_token' y 'type=recovery' en query_params
-query_params = st.query_params
-if "access_token" in query_params and "type" in query_params and query_params["type"] == "recovery":
-    
-    # Intentamos restaurar la sesión con el token
-    try:
-        access_token = query_params["access_token"]
-        refresh_token = query_params.get("refresh_token", "")
-        
-        # Usamos set_session para loguear al usuario con el token del correo
-        session = supabase.auth.set_session(access_token, refresh_token)
-        
-        if session:
-            # Usuario logueado temporalmente, mostrar formulario de cambio de clave
-            st.session_state["authentication_status"] = True
-            st.session_state["user_id"] = session.user.id
-            st.session_state["username"] = session.user.email
-            st.session_state["name"] = "Usuario" # Temporal
-            
-            # --- PANTALLA DE RESETEO DE CONTRASEÑA ---
-            st.divider()
-            st.warning(t["reset_title"])
-            st.info(t["reset_msg"])
-            
-            with st.form("reset_final_form"):
-                new_password = st.text_input(t["reset_pass_new"], type="password")
-                if st.form_submit_button(t["reset_btn_final"]):
-                    if len(new_password) >= 6:
-                        # Actualizamos la contraseña en Supabase
-                        supabase.auth.update_user({"password": new_password})
-                        st.success(t["reset_success"])
-                        
-                        # Limpiamos la URL para salir del modo recovery
-                        st.query_params.clear()
-                        time.sleep(3)
-                        st.rerun()
-                    else:
-                        st.error("Mínimo 6 caracteres.")
-            
-            # Detenemos la ejecución aquí para que no cargue el resto de la app hasta cambiar la clave
-            st.stop()
-
-    except Exception as e:
-        st.error(f"Error al procesar recuperación: {e}")
-        st.stop()
-
-# ==============================================================================
-# 3. LOGICA NORMAL DE SESIÓN (Auto-Login por persistencia)
-# ==============================================================================
 try:
-    # Si no venimos de recovery, verificamos si ya hay sesión activa
     session = supabase.auth.get_session()
-    if session and not st.session_state["authentication_status"]:
+    if session:
         st.session_state["authentication_status"] = True
         st.session_state["user_id"] = session.user.id
         st.session_state["username"] = session.user.email
         
-        # Auto-Reparación de Perfil
+        # AUTO-REPARACIÓN DE PERFIL (CRÍTICO)
         try:
             prof = supabase.table('profiles').select('full_name').eq('id', session.user.id).execute()
             if not prof.data:
+                # Crear perfil si no existe
                 nombre_meta = session.user.user_metadata.get('full_name', 'Estudiante')
                 supabase.table('profiles').insert({
-                    'id': session.user.id, 'email': session.user.email, 'full_name': nombre_meta
+                    'id': session.user.id,
+                    'email': session.user.email,
+                    'full_name': nombre_meta
                 }).execute()
                 st.session_state["name"] = nombre_meta
             else:
                 st.session_state["name"] = prof.data[0]['full_name']
-        except: st.session_state["name"] = "Estudiante"
-        st.rerun()
-except: pass
+        except Exception as e:
+            st.session_state["name"] = "Estudiante"
+except: 
+    pass
 
 # ==========================================
-# APP PRINCIPAL (DENTRO)
+# APP PRINCIPAL (LOGUEADO)
 # ==========================================
 if st.session_state["authentication_status"] is True:
     user_name = st.session_state["name"]
@@ -327,15 +287,32 @@ if st.session_state["authentication_status"] is True:
     user_email = st.session_state["username"]
 
     c1, c2 = st.columns([0.8, 0.2])
-    c1.caption(f"{t['login_success']} {user_name}")
+    c1.caption(f"{t['login_success']} {user_name} ({user_email})")
     if c2.button(t["logout_btn"], use_container_width=True):
-        supabase.auth.sign_out()
+        try:
+            supabase.auth.sign_out() 
+        except: pass
         st.session_state.clear()
         st.rerun()
 
+    # --- BARRA LATERAL EXTRA (CAMBIAR CLAVE) ---
+    with st.sidebar:
+        st.markdown("---")
+        st.markdown(f"### 🔐 Seguridad")
+        with st.expander(t["change_pass_header"]):
+            with st.form("pass_change", enter_to_submit=False):
+                new_p = st.text_input(t["new_pass"], type="password")
+                if st.form_submit_button(t["change_pass_btn"]):
+                    if len(new_p) >= 6:
+                        try:
+                            supabase.auth.update_user({"password": new_p})
+                            st.success(t["pass_updated"])
+                        except Exception as e: st.error(f"Error: {e}")
+                    else: st.error("Min 6 chars")
+
     tab1, tab2, tab3 = st.tabs([t["tab1"], t["tab2"], t["tab3"]])
 
-    # TAB 1: CHAT
+    # --- TAB 1: CHATBOT ---
     with tab1:
         if st.button(t["chat_clear_btn"], use_container_width=True):
             supabase.table('chat_history').update({'is_visible': False}).eq('user_id', user_id).execute()
@@ -352,10 +329,12 @@ if st.session_state["authentication_status"] is True:
                 st.session_state.messages.append({"id": r['id'], "role": r['role'], "content": r['message']})
             if not st.session_state.messages:
                 msg = t["chat_welcome"].format(name=user_name)
+                # Intento seguro de insertar bienvenida
                 try:
                     res = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': msg}).execute()
                     st.session_state.messages.append({"id": res.data[0]['id'], "role": "assistant", "content": msg})
-                except: pass
+                except Exception as e:
+                    st.error(f"Error al inicializar chat. Intenta recargar la página.")
 
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
@@ -377,13 +356,13 @@ if st.session_state["authentication_status"] is True:
                                 st.session_state[f"show_reason_{msg['id']}"] = False
                                 st.rerun()
 
-        if prompt := st.chat_input("..."):
+        if prompt := st.chat_input(t["chat_placeholder"]):
             st.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"): st.markdown(prompt)
             supabase.table('chat_history').insert({'user_id': user_id, 'role': 'user', 'message': prompt}).execute()
             
             with st.chat_message("assistant"):
-                with st.spinner("..."):
+                with st.spinner(t["chat_thinking"]):
                     resp = chain.invoke({"input": prompt, "user_name": user_name})["answer"]
                 st.write_stream(stream_data(resp))
             
@@ -397,6 +376,7 @@ if st.session_state["authentication_status"] is True:
         if subs:
             cars = sorted(list(set([s['career'] for s in subs])))
             sems = sorted(list(set([s['semester'] for s in subs])))
+            
             c1, c2, c3 = st.columns([2,2,1])
             sel_car = c1.selectbox(t["filter_career"], [t["filter_all"]] + cars)
             sel_sem = c2.selectbox(t["filter_sem"], [t["filter_all_m"]] + [f"Sem {x}" for x in sems])
@@ -423,7 +403,10 @@ if st.session_state["authentication_status"] is True:
                             cap = sec['capacity'] - (cnt if cnt else 0)
                             cc1, cc2, cc3 = st.columns([3,2,2])
                             cc1.write(f"**{sec['section_code']}**")
-                            cc2.write(f"{sec['day_of_week']} {sec['start_time'][:5]}-{sec['end_time'][:5]}")
+                            cc1.caption(sec['professor_name'])
+                            cc2.write(f"{sec['day_of_week']}")
+                            cc2.caption(f"{sec['start_time'][:5]} - {sec['end_time'][:5]}")
+                            
                             if cap > 0:
                                 if cc3.button(f"{t['btn_enroll']} ({cap})", key=sec['id']):
                                     conflict = False
@@ -491,14 +474,14 @@ else:
                 try:
                     res = supabase.auth.sign_in_with_password({"email": e, "password": p})
                     st.rerun()
-                except: st.error(t["login_failed"])
+                except Exception as e: 
+                    st.error(f"Error de Login: {e}") # Debug para ver qué pasa
         
         with st.expander(t["forgot_header"]):
             with st.form("rec", enter_to_submit=False):
                 rec_e = st.text_input(t["forgot_email"])
                 if st.form_submit_button(t["forgot_btn"]):
                     try:
-                        # Asegúrate de que este link sea TU url de producción
                         supabase.auth.reset_password_for_email(rec_e, options={'redirect_to': 'https://chatbot-duoc1.streamlit.app'})
                         st.success(t["forgot_success"])
                     except: st.error("Error")
@@ -513,6 +496,7 @@ else:
                 try:
                     res = supabase.auth.sign_up({"email": re, "password": rp, "options": {"data": {"full_name": rn}}})
                     if res.user:
+                        # AUTO-CREACIÓN DE PERFIL AL REGISTRARSE
                         supabase.table('profiles').insert({'id': res.user.id, 'email': re, 'full_name': rn}).execute()
                         st.success(t["reg_success"])
                 except Exception as ex: st.error(str(ex))
