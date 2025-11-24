@@ -1,4 +1,4 @@
-# Versión 14.7 (FINAL: Eliminado texto 'Press Enter' + Banderas + Todo Integrado)
+# Versión 14.8 (FINAL: Emojis Google Style en TODA la App + Login + Admin)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -28,12 +28,15 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- CSS PARA FORZAR EMOJIS ---
+# --- CSS GLOBAL PARA EMOJIS UNIFORMES ---
 st.markdown("""
     <style>
+    /* Importamos la fuente de emojis de Google */
     @import url('https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap');
-    .stSelectbox div[data-baseweb="select"] > div, .stSelectbox span {
-        font-family: 'Noto Color Emoji', 'Segoe UI Emoji', 'Apple Color Emoji', sans-serif !important;
+    
+    /* Aplicamos a toda la app: HTML, Body, Botones, Inputs, etc. */
+    html, body, [class*="st-"], .stMarkdown, .stButton, .stSelectbox, .stTextInput {
+        font-family: 'Source Sans Pro', 'Noto Color Emoji', 'Segoe UI Emoji', 'Apple Color Emoji', sans-serif !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -328,7 +331,6 @@ if st.session_state["authentication_status"] is True:
                     reason_key = f"show_reason_{msg['id']}"
                     if col_fb2.button("👎", key=f"down_{msg['id']}"): st.session_state[reason_key] = True
                     if st.session_state.get(reason_key, False):
-                        # --- AQUI ESTA LA MAGIA: enter_to_submit=False ---
                         with st.form(key=f"form_{msg['id']}", enter_to_submit=False):
                             st.write(t["feedback_modal_title"])
                             comment_text = st.text_area("...", placeholder=t["feedback_modal_placeholder"], label_visibility="collapsed")
@@ -487,7 +489,6 @@ else:
     col_L, col_Main, col_R = st.columns([1, 2, 1])
     with col_Main:
         st.subheader(t["login_title"])
-        # --- AQUI ESTA LA MAGIA: enter_to_submit=False ---
         with st.form("login_form", enter_to_submit=False):
             input_email = st.text_input(t["login_user"])
             input_pass = st.text_input(t["login_pass"], type="password")
@@ -508,7 +509,6 @@ else:
 
     with st.sidebar:
         st.subheader(t["reg_header"])
-        # --- AQUI ESTA LA MAGIA: enter_to_submit=False ---
         with st.form("reg", enter_to_submit=False):
             n = st.text_input(t["reg_name"])
             e = st.text_input(t["reg_email"])
