@@ -281,7 +281,7 @@ def fetch_all_users():
         return users_dict
     except: return {}
 
-# --- SIDEBAR (CON LOGO CORREGIDO) ---
+# --- SIDEBAR (LOGO FIX) ---
 with st.sidebar:
     # FIX: Contenedor blanco para el logo en fondo oscuro
     st.markdown(f"""
