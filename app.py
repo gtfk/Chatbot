@@ -246,15 +246,6 @@ def inicializar_cadena(language_code):
     retrieval_chain = create_retrieval_chain(retriever, document_chain)
     return retrieval_chain
 
-# --- FETCH USERS ---
-def fetch_all_users():
-    try:
-        response = supabase.table('profiles').select("email, full_name, password_hash").execute()
-        if not response.data: return {}
-        users_dict = {u['email']: u for u in response.data}
-        return users_dict
-    except: return {}
-
 # --- SIDEBAR ---
 with st.sidebar:
     st.markdown(f"""
@@ -331,7 +322,7 @@ if st.session_state["authentication_status"] is True:
                         st.session_state.messages.append({"id": res.data[0]['id'], "role": "assistant", "content": welcome_msg})
                 except Exception as e:
                     # Si falla por falta de perfil, mostramos error amable
-                    st.error(f"Error: Tu usuario no tiene perfil creado. Por favor regístrate de nuevo.")
+                    st.error(f"Error al inicializar chat. Verifica que tu usuario tenga perfil. Error: {e}")
 
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
@@ -507,9 +498,8 @@ else:
         session = supabase.auth.get_session()
         if session:
             # Mostrar formulario de cambio de contraseña
-            st.warning("⚠ Modo Recuperación de Contraseña")
+            st.warning(t["reset_title"])
             with st.form("reset_password_form", enter_to_submit=False):
-                st.subheader(t["reset_title"])
                 new_pass = st.text_input(t["reset_pass_new"], type="password")
                 if st.form_submit_button(t["reset_btn_final"]):
                     if len(new_pass) >= 6:
@@ -595,13 +585,3 @@ else:
                         st.info("Revisa tu correo para confirmar.")
                 except Exception as err: 
                     st.error(f"Error: {err}")
-```
-
-### Resumen de la lógica mágica:
-```python
-    # --- MAGIA: DETECTAR RESET PASSWORD ---
-    try:
-        session = supabase.auth.get_session()
-        if session:
-            # ... Muestra el formulario de NUEVA CONTRASEÑA ...
-            st.stop()
