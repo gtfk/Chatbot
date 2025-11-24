@@ -1,4 +1,4 @@
-# Versión 27.0 (FINAL: Auto-Reparación de Perfil + Todo Integrado)
+# Versión 27.0 (FINAL: Auto-Reparación de Perfil + Auth Nativo + Todo Integrado)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -62,6 +62,10 @@ TEXTS = {
         "reset_pass_new": "Nueva Contraseña",
         "reset_btn_final": "Guardar Nueva Contraseña",
         "reset_success": "✅ Contraseña actualizada. Inicia sesión con tu nueva clave.",
+        "change_pass_header": "Cambiar Contraseña",
+        "new_pass": "Nueva Contraseña",
+        "change_pass_btn": "Actualizar Clave",
+        "pass_updated": "✅ Contraseña actualizada.",
         "chat_clear_btn": "🧹 Limpiar Conversación",
         "chat_cleaning": "Procesando solicitud...",
         "chat_cleaned": "¡Historial limpiado!",
@@ -109,7 +113,7 @@ TEXTS = {
         "reg_email": "Correo Duoc",
         "reg_pass": "Crear Contraseña",
         "reg_btn": "Registrarse",
-        "reg_success": "¡Cuenta creada! Revisa tu correo para confirmar.",
+        "reg_success": "¡Cuenta creada! Ya puedes iniciar sesión.",
         "auth_error": "Verifica tus datos.",
         "system_prompt": "INSTRUCCIÓN: Responde en Español formal pero cercano. ROL: Coordinador académico Duoc UC."
     },
@@ -136,6 +140,10 @@ TEXTS = {
         "reset_pass_new": "New Password",
         "reset_btn_final": "Save New Password",
         "reset_success": "✅ Password updated. Login with your new password.",
+        "change_pass_header": "Change Password",
+        "new_pass": "New Password",
+        "change_pass_btn": "Update Password",
+        "pass_updated": "✅ Password updated.",
         "chat_clear_btn": "🧹 Clear Conversation",
         "chat_cleaning": "Processing...",
         "chat_cleaned": "History cleared!",
@@ -264,40 +272,37 @@ c1, c2 = st.columns([0.1, 0.9])
 with c1: st.image(LOGO_ICON_URL, width=70)
 with c2: st.title(t["title"])
 
-# --- AUTO-LOGIN & RECOVERY CHECK ---
+# --- AUTO-LOGIN & RECOVERY CHECK (AUTO-REPARACIÓN DE PERFIL) ---
 if "authentication_status" not in st.session_state:
     st.session_state["authentication_status"] = None
 
 try:
-    # Verificar sesión activa o enlace mágico
     session = supabase.auth.get_session()
     if session:
-        # 1. MODO RESET PASSWORD: Si el usuario entró por link de recuperación pero la app no lo sabe
-        # Detectamos si estamos en un flujo de recuperación (url params o estado interno)
-        # Por simplicidad, si hay session pero no authentication_status, asumimos login o recovery exitoso.
-        
+        # Si estamos aquí, el usuario está autenticado (Login normal o Magic Link)
         st.session_state["authentication_status"] = True
         st.session_state["user_id"] = session.user.id
         st.session_state["username"] = session.user.email
         
-        # --- AUTO-REPARACIÓN DE PERFIL (CRÍTICO PARA TU ERROR) ---
-        # Verificamos si existe en la tabla profiles
+        # AUTO-REPARACIÓN: Verificar si tiene perfil
         try:
             prof = supabase.table('profiles').select('full_name').eq('id', session.user.id).execute()
             if not prof.data:
-                # NO EXISTE: LO CREAMOS AHORA MISMO
+                # NO EXISTE PERFIL: LO CREAMOS AHORA (Fix APIError)
+                nombre_meta = session.user.user_metadata.get('full_name', 'Estudiante')
+                # Importante: Asegúrate que tu tabla profiles en Supabase permita NULL en password_hash o no lo pidas
                 supabase.table('profiles').insert({
                     'id': session.user.id,
                     'email': session.user.email,
-                    'full_name': session.user.user_metadata.get('full_name', 'Estudiante')
+                    'full_name': nombre_meta
                 }).execute()
-                st.session_state["name"] = session.user.user_metadata.get('full_name', 'Estudiante')
+                st.session_state["name"] = nombre_meta
             else:
                 st.session_state["name"] = prof.data[0]['full_name']
         except Exception as e:
-            st.error(f"Error sincronizando perfil: {e}")
-            
-except: pass
+            st.session_state["name"] = "Estudiante"
+except: 
+    pass
 
 
 # ==========================================
@@ -306,15 +311,31 @@ except: pass
 if st.session_state["authentication_status"] is True:
     user_name = st.session_state["name"]
     user_id = st.session_state["user_id"]
+    user_email = st.session_state["username"]
 
     c1, c2 = st.columns([0.8, 0.2])
-    c1.caption(f"{t['login_success']} {user_name}")
+    c1.caption(f"{t['login_success']} {user_name} ({user_email})")
     if c2.button(t["logout_btn"], use_container_width=True):
         try:
             supabase.auth.sign_out() 
         except: pass
         st.session_state.clear()
         st.rerun()
+
+    # --- BARRA LATERAL EXTRA (CAMBIAR CLAVE) ---
+    with st.sidebar:
+        st.markdown("---")
+        st.markdown(f"### 🔐 Seguridad")
+        with st.expander(t["change_pass_header"]):
+            with st.form("pass_change", enter_to_submit=False):
+                new_p = st.text_input(t["new_pass"], type="password")
+                if st.form_submit_button(t["change_pass_btn"]):
+                    if len(new_p) >= 6:
+                        try:
+                            supabase.auth.update_user({"password": new_p})
+                            st.success(t["pass_updated"])
+                        except Exception as e: st.error(f"Error: {e}")
+                    else: st.error("Min 6 chars")
 
     tab1, tab2, tab3 = st.tabs([t["tab1"], t["tab2"], t["tab3"]])
 
@@ -331,12 +352,16 @@ if st.session_state["authentication_status"] is True:
         if "messages" not in st.session_state:
             st.session_state.messages = []
             history = supabase.table('chat_history').select('*').eq('user_id', user_id).eq('is_visible', True).order('created_at').execute()
-            for row in history.data:
-                st.session_state.messages.append({"id": row['id'], "role": row['role'], "content": row['message']})
+            for r in history.data:
+                st.session_state.messages.append({"id": r['id'], "role": r['role'], "content": r['message']})
             if not st.session_state.messages:
                 msg = t["chat_welcome"].format(name=user_name)
-                res = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': msg}).execute()
-                st.session_state.messages.append({"id": res.data[0]['id'], "role": "assistant", "content": msg})
+                # Intento seguro de insertar bienvenida
+                try:
+                    res = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': msg}).execute()
+                    st.session_state.messages.append({"id": res.data[0]['id'], "role": "assistant", "content": msg})
+                except Exception as e:
+                    st.error(f"Error al inicializar chat. Tu perfil se está reparando, recarga la página.")
 
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
@@ -453,42 +478,38 @@ if st.session_state["authentication_status"] is True:
                 clean_data = []
                 for row in audit.data:
                     fb = row['feedback'][0] if row['feedback'] else {}
+                    
+                    # Obtener pregunta del usuario
+                    try:
+                        q = supabase.table('chat_history').select('message').eq('user_id', row['user_id']).eq('role', 'user').lt('created_at', row['created_at']).order('created_at', desc=True).limit(1).execute()
+                        q_text = q.data[0]['message'] if q.data else "N/A"
+                    except: q_text = "Error"
+
                     clean_data.append({
                         t["col_date"]: row['created_at'][:16].replace("T"," "),
                         t["col_status"]: "Active" if row['is_visible'] else "Archived",
+                        t["col_q"]: q_text,
                         t["col_a"]: row['message'],
                         t["col_val"]: "✅" if fb.get('rating')=='good' else "❌",
                         t["col_com"]: fb.get('comment', '')
                     })
                 st.dataframe(clean_data, use_container_width=True)
             else: st.info("No data")
-        
-    # --- BARRA LATERAL EXTRA (CAMBIAR CLAVE) ---
-    # Solo visible si está logueado
-    with st.sidebar:
-        st.markdown("---")
-        st.markdown("### 🔐 Seguridad")
-        with st.expander("Cambiar Contraseña"):
-            with st.form("pass_change", enter_to_submit=False):
-                new_p = st.text_input("Nueva Contraseña", type="password")
-                if st.form_submit_button("Actualizar"):
-                    if len(new_p) >= 6:
-                        try:
-                            supabase.auth.update_user({"password": new_p})
-                            st.success("✅ Contraseña actualizada")
-                        except Exception as e:
-                            st.error(f"Error: {e}")
-                    else: st.error("Mínimo 6 caracteres")
 
 # ==========================================
 # PANTALLA DE LOGIN (NO LOGUEADO)
 # ==========================================
 else:
     
-    # --- DETECCIÓN DE LINK MÁGICO (RECUPERACIÓN) ---
-    # Si supabase.auth.get_session() retorna algo al inicio, el código de arriba (línea 124)
-    # ya habrá seteado authentication_status=True y redirigido.
-    # Si estamos aquí, es porque NO hay sesión válida.
+    # --- MAGIA: DETECTAR RESET PASSWORD ---
+    try:
+        # Check URL or session
+        session = supabase.auth.get_session()
+        if session:
+            # Si entra aquí es porque hizo click en el link, el bloque de arriba (auto-login)
+            # ya lo habrá logueado, pero queremos darle feedback visual o llevarlo al cambio de clave
+            pass # Ya se maneja arriba en el auto-login
+    except: pass
 
     cL, cM, cR = st.columns([1, 2, 1])
     with cM:
@@ -508,7 +529,6 @@ else:
                 rec_e = st.text_input(t["forgot_email"])
                 if st.form_submit_button(t["forgot_btn"]):
                     try:
-                        # Ajusta la URL a tu dominio real de Streamlit
                         supabase.auth.reset_password_for_email(rec_e, options={'redirect_to': 'https://chatbot-duoc1.streamlit.app'})
                         st.success(t["forgot_success"])
                     except: st.error("Error")
@@ -523,7 +543,7 @@ else:
                 try:
                     # Crear en Auth
                     res = supabase.auth.sign_up({"email": re, "password": rp, "options": {"data": {"full_name": rn}}})
-                    # Crear Perfil (Fix APIError)
+                    # Crear Perfil AUTOMÁTICAMENTE (Fix APIError)
                     if res.user:
                         supabase.table('profiles').insert({'id': res.user.id, 'email': re, 'full_name': rn}).execute()
                         st.success(t["reg_success"])
