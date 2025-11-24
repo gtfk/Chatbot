@@ -1,4 +1,4 @@
-# Versión 21.2 (FINAL: Botones Azules + CSS Externo + Todo Integrado)
+# Versión 22.0 (FINAL: Lógica Limpia + Fix Iconos + CSS Separado)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -35,8 +35,9 @@ def load_css(file_name):
         with open(file_name) as f:
             st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
     except FileNotFoundError:
-        st.error(f"⚠️ No se encontró el archivo {file_name}. Asegúrate de que esté en la misma carpeta.")
+        st.error(f"⚠️ No se encontró el archivo {file_name}. Asegúrate de que esté en la misma carpeta que app.py.")
 
+# Cargar estilos visuales
 load_css("styles.css")
 
 # --- DICCIONARIO DE TRADUCCIONES ---
