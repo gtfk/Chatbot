@@ -1,4 +1,4 @@
-# Versión 11.0 (Feedback Negativo con Comentario + Admin Mejorado)
+# Versión 11.1 (FINAL: Feedback en Tiempo Real - Muestra TODO)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -187,29 +187,26 @@ if st.session_state["authentication_status"] is True:
                 if msg["role"] == "assistant" and msg["id"]:
                     col_fb1, col_fb2, _ = st.columns([1,1,8])
                     
-                    # --- BOTÓN LIKE (Rápido) ---
+                    # --- BOTÓN LIKE ---
                     if col_fb1.button("👍", key=f"up_{msg['id']}"):
                         supabase.table('feedback').insert({
                             "message_id": msg['id'], 
                             "user_id": user_id, 
                             "rating": "good",
-                            "comment": None # Like no necesita comentario obligatorio
+                            "comment": None 
                         }).execute()
                         st.toast("¡Gracias por tu valoración!")
 
-                    # --- BOTÓN DISLIKE (Abre Formulario) ---
-                    # Usamos session_state para controlar si se muestra la cajita de texto
+                    # --- BOTÓN DISLIKE ---
                     reason_key = f"show_reason_{msg['id']}"
                     
                     if col_fb2.button("👎", key=f"down_{msg['id']}"):
-                        # Al hacer clic, activamos la visibilidad del formulario para ESTE mensaje
                         st.session_state[reason_key] = True
 
-                    # Si la variable de estado es True, mostramos el formulario
                     if st.session_state.get(reason_key, False):
                         with st.form(key=f"form_{msg['id']}"):
                             st.write("Cuéntanos, ¿qué salió mal?")
-                            comment_text = st.text_area("Comentario (Opcional):", placeholder="Ej: La respuesta es incorrecta o confusa...")
+                            comment_text = st.text_area("Comentario (Opcional):", placeholder="Ej: La respuesta es incorrecta...")
                             
                             col_sub1, col_sub2 = st.columns([1, 1])
                             with col_sub1:
@@ -218,15 +215,14 @@ if st.session_state["authentication_status"] is True:
                                         "message_id": msg['id'], 
                                         "user_id": user_id, 
                                         "rating": "bad",
-                                        "comment": comment_text # Guardamos lo que escribió
+                                        "comment": comment_text 
                                     }).execute()
-                                    st.toast("Reporte enviado. ¡Gracias por ayudarnos a mejorar!")
-                                    st.session_state[reason_key] = False # Cerramos formulario
+                                    st.toast("Reporte enviado. ¡Gracias!")
+                                    st.session_state[reason_key] = False 
                                     st.rerun()
-                            
                             with col_sub2:
                                 if st.form_submit_button("Cancelar"):
-                                    st.session_state[reason_key] = False # Cerramos sin guardar
+                                    st.session_state[reason_key] = False 
                                     st.rerun()
 
         # Input Chat
@@ -367,52 +363,52 @@ if st.session_state["authentication_status"] is True:
                         st.cache_data.clear()
                         st.rerun()
 
-    # --- PESTAÑA 3: AUDITORÍA (PROTEGIDA CON CONTRASEÑA "DUOC2025") ---
+    # --- PESTAÑA 3: AUDITORÍA (PROTEGIDA) ---
     with tab3:
         st.header("🕵️ Auditoría de Feedback (Zona Admin)")
         
-        # === SEGURIDAD DE ACCESO ===
         admin_pass = st.text_input("🔑 Ingrese Contraseña de Administrador:", type="password")
         
         if admin_pass == "DUOC2025":
             st.success("🔓 Acceso Concedido")
-            st.info("Aquí se muestran los mensajes que el usuario ocultó (borró) pero que recibieron Feedback.")
+            st.info("Visualizando TODO el feedback recibido (Chats visibles y archivados).")
 
             if st.button("🔄 Actualizar Tabla"):
                 st.rerun()
 
             try:
-                # Consulta ACTUALIZADA para traer también el comentario
+                # --- CORRECCIÓN AQUÍ: Quitamos el filtro .eq('is_visible', False) ---
+                # Ahora mostramos TODO el feedback, sin importar si el chat está oculto o no
                 response = supabase.table('chat_history')\
-                    .select('created_at, role, message, feedback(rating, comment)')\
-                    .eq('is_visible', False)\
+                    .select('created_at, role, message, is_visible, feedback(rating, comment)')\
                     .not_.is_('feedback', 'null')\
                     .order('created_at', desc=True)\
                     .execute()
 
-                mensajes_ocultos = response.data
+                mensajes_con_feedback = response.data
 
-                if not mensajes_ocultos:
-                    st.warning("No hay mensajes archivados con feedback todavía.")
+                if not mensajes_con_feedback:
+                    st.warning("No hay feedback registrado en la base de datos.")
                 else:
                     data_para_tabla = []
-                    for item in mensajes_ocultos:
+                    for item in mensajes_con_feedback:
                         if item['feedback']:
                             fb = item['feedback'][0]
                             rating = fb['rating']
-                            comment = fb.get('comment', '') # Obtenemos el comentario
+                            comment = fb.get('comment', '') 
                         else:
                             rating = "N/A"
                             comment = ""
 
                         icon = "✅ Positivo" if rating == "good" else "❌ Negativo"
+                        estado_chat = "Activo" if item['is_visible'] else "Archivado"
                         
                         data_para_tabla.append({
                             "Fecha": item['created_at'][:16].replace("T", " "),
-                            "Rol": item['role'],
+                            "Estado": estado_chat,
                             "Valoración": icon,
-                            "Comentario del Usuario": comment, # Columna nueva
-                            "Mensaje Original": item['message']
+                            "Comentario": comment,
+                            "Mensaje Bot": item['message']
                         })
                     
                     st.dataframe(data_para_tabla, use_container_width=True)
