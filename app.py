@@ -1,4 +1,4 @@
-# Versión 12.0 (FINAL: Auditoría Completa con Pregunta del Alumno)
+# Versión 13.0 (Efecto Streaming + Auditoría Completa + Admin Seguro)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -31,6 +31,8 @@ st.set_page_config(
 GROQ_API_KEY = st.secrets.get("GROQ_API_KEY")
 SUPABASE_URL = st.secrets.get("SUPABASE_URL")
 SUPABASE_KEY = st.secrets.get("SUPABASE_KEY")
+# Intenta cargar password de admin desde secrets, si no usa el default
+ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD", "DUOC2025")
 
 if not GROQ_API_KEY or not SUPABASE_URL or not SUPABASE_KEY:
     st.error("Error: Faltan claves de API en los Secrets de Streamlit.")
@@ -42,6 +44,12 @@ def init_supabase_client():
     return create_client(SUPABASE_URL, SUPABASE_KEY)
 
 supabase = init_supabase_client()
+
+# --- FUNCIÓN PARA EFECTO STREAMING (MÁQUINA DE ESCRIBIR) ---
+def stream_data(text):
+    for word in text.split(" "):
+        yield word + " "
+        time.sleep(0.02)
 
 # --- CACHING DE RECURSOS DEL CHATBOT ---
 @st.cache_resource
@@ -228,13 +236,19 @@ if st.session_state["authentication_status"] is True:
             supabase.table('chat_history').insert({'user_id': user_id, 'role': 'user', 'message': prompt}).execute()
             
             with st.chat_message("assistant"):
+                # Spinner mientras pensamos
                 with st.spinner("Pensando..."):
-                    resp = retrieval_chain.invoke({"input": prompt, "user_name": user_name})["answer"]
-                    st.markdown(resp)
+                    response = retrieval_chain.invoke({"input": prompt, "user_name": user_name})
+                    resp = response["answer"]
+                
+                # --- AQUÍ ESTÁ EL EFECTO STREAMING ---
+                st.write_stream(stream_data(resp))
             
             res_bot = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': resp}).execute()
             st.session_state.messages.append({"id": res_bot.data[0]['id'], "role": "assistant", "content": resp})
-            st.rerun()
+            
+            # No hacemos rerun aquí para dejar que el stream termine visualmente, 
+            # en la próxima interacción se cargará como estático.
 
     # --- PESTAÑA 2: INSCRIPCIÓN ---
     with tab2:
@@ -364,7 +378,7 @@ if st.session_state["authentication_status"] is True:
         
         admin_pass = st.text_input("🔑 Ingrese Contraseña de Administrador:", type="password")
         
-        if admin_pass == "DUOC2025":
+        if admin_pass == ADMIN_PASSWORD:
             st.success("🔓 Acceso Concedido")
             st.info("Visualizando feedback completo con la pregunta original del alumno.")
 
@@ -373,7 +387,6 @@ if st.session_state["authentication_status"] is True:
 
             try:
                 # 1. Traer mensajes del BOT que tienen feedback
-                # Importante traer el user_id para buscar su pregunta especifica
                 response = supabase.table('chat_history')\
                     .select('created_at, role, message, is_visible, user_id, feedback(rating, comment)')\
                     .not_.is_('feedback', 'null')\
@@ -387,12 +400,10 @@ if st.session_state["authentication_status"] is True:
                 else:
                     data_para_tabla = []
                     
-                    # Barra de progreso porque esto puede tomar un segundo si son muchos
                     progress_bar = st.progress(0)
                     total_items = len(mensajes_con_feedback)
 
                     for i, item in enumerate(mensajes_con_feedback):
-                        # Procesar feedback
                         if item['feedback']:
                             fb = item['feedback'][0]
                             rating = fb['rating']
@@ -404,8 +415,6 @@ if st.session_state["authentication_status"] is True:
                         icon = "✅ Positivo" if rating == "good" else "❌ Negativo"
                         estado_chat = "Activo" if item['is_visible'] else "Archivado"
                         
-                        # --- MAGIA: BUSCAR LA PREGUNTA DEL ALUMNO ---
-                        # Buscamos el último mensaje de ESTE usuario, que sea 'user', ANTES de la respuesta del bot
                         try:
                             q_response = supabase.table('chat_history')\
                                 .select('message')\
@@ -423,7 +432,7 @@ if st.session_state["authentication_status"] is True:
                         data_para_tabla.append({
                             "Fecha": item['created_at'][:16].replace("T", " "),
                             "Estado": estado_chat,
-                            "Pregunta Alumno": pregunta_alumno, # COLUMNA NUEVA
+                            "Pregunta Alumno": pregunta_alumno, 
                             "Respuesta Bot": item['message'],
                             "Valoración": icon,
                             "Comentario": comment
@@ -431,7 +440,7 @@ if st.session_state["authentication_status"] is True:
                         
                         progress_bar.progress((i + 1) / total_items)
                     
-                    progress_bar.empty() # Borrar barra al terminar
+                    progress_bar.empty()
                     st.dataframe(data_para_tabla, use_container_width=True)
 
             except Exception as e:
