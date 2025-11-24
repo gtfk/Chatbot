@@ -1,4 +1,4 @@
-# Versión 14.5 (FINAL: Banderas Forzadas con CSS + Login + Admin)
+# Versión 14.6 (FINAL: Corrección KeyError + Banderas Estables + Todo Integrado)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -28,14 +28,11 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- CSS PARA FORZAR EMOJIS DE BANDERAS (PARCHE PARA WINDOWS) ---
+# --- CSS PARA FORZAR EMOJIS (Evita que se vean como letras en Windows) ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap');
-    
-    /* Aplicar fuente de emoji a los selectbox y textos */
-    .stSelectbox div[data-baseweb="select"] > div, 
-    .stSelectbox span {
+    .stSelectbox div[data-baseweb="select"] > div, .stSelectbox span {
         font-family: 'Noto Color Emoji', 'Segoe UI Emoji', 'Apple Color Emoji', sans-serif !important;
     }
     </style>
@@ -44,7 +41,6 @@ st.markdown("""
 # --- DICCIONARIO DE TRADUCCIONES ---
 TEXTS = {
     "es": {
-        "label": "Español 🇨🇱", # Etiqueta para el selector
         "title": "Asistente Académico Duoc UC",
         "sidebar_lang": "Idioma / Language",
         "login_success": "Conectado como:",
@@ -113,7 +109,6 @@ TEXTS = {
         """
     },
     "en": {
-        "label": "English 🇺🇸", # Etiqueta para el selector
         "title": "Duoc UC Academic Assistant",
         "sidebar_lang": "Language / Idioma",
         "login_success": "Logged in as:",
@@ -249,17 +244,20 @@ def fetch_all_users():
         return users_dict
     except: return {}
 
-# --- SELECTOR DE IDIOMA MEJORADO ---
+# --- SELECTOR DE IDIOMA (CORREGIDO PARA EVITAR KEYERROR) ---
 with st.sidebar:
     st.image(LOGO_BANNER_URL)
     
-    # Usamos claves 'es'/'en' pero mostramos el texto bonito con format_func
-    lang_code = st.selectbox(
-        "🌐 Language / Idioma", 
-        options=["es", "en"],
-        format_func=lambda x: TEXTS[x]["label"] # Muestra "Español 🇨🇱" o "English 🇺🇸"
-    )
+    # Selector con opciones visuales
+    lang_option = st.selectbox("🌐 Language / Idioma", ["Español 🇨🇱", "English 🇺🇸"])
     
+    # Mapeo manual de opción visual a código de idioma
+    if lang_option == "Español 🇨🇱":
+        lang_code = "es"
+    else:
+        lang_code = "en"
+    
+    # Ahora cargamos el diccionario seguro
     t = TEXTS[lang_code]
 
 # --- CABECERA ---
