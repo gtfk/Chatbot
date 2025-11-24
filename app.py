@@ -1,4 +1,4 @@
-# Versión 7.9 (Filtros Bidireccionales: Carrera <-> Semestre)
+# Versión 8.0 (Estable: Filtros Inteligentes + Corrección Limpieza de Chat)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -33,7 +33,7 @@ SUPABASE_URL = st.secrets.get("SUPABASE_URL")
 SUPABASE_KEY = st.secrets.get("SUPABASE_KEY")
 
 if not GROQ_API_KEY or not SUPABASE_URL or not SUPABASE_KEY:
-    st.error("Error: Faltan claves de API en los Secrets.")
+    st.error("Error: Faltan claves de API en los Secrets de Streamlit.")
     st.stop()
 
 # --- INICIALIZAR EL CLIENTE DE SUPABASE ---
@@ -135,27 +135,48 @@ if st.session_state["authentication_status"] is True:
 
     # --- PESTAÑA 1: CHATBOT ---
     with tab1:
-        if st.button("Limpiar Chat", key="clear_chat"):
-            supabase.table('chat_history').delete().eq('user_id', user_id).execute()
-            st.session_state.messages = []
-            st.rerun()
+        # === CORRECCIÓN AQUÍ: Limpiar Feedback antes de Limpiar Chat ===
+        if st.button("Limpiar Historial del Chat", use_container_width=True, key="clear_chat"):
+            with st.spinner("Limpiando historial..."):
+                # 1. Borrar Feedback asociado al usuario (Dependencia FK)
+                supabase.table('feedback').delete().eq('user_id', user_id).execute()
+                # 2. Borrar Historial de Chat
+                supabase.table('chat_history').delete().eq('user_id', user_id).execute()
+                
+                # 3. Resetear estado local y poner mensaje de bienvenida
+                st.session_state.messages = []
+                welcome_msg = f"¡Hola {user_name}! Tu historial ha sido limpiado. ¿En qué te puedo ayudar?"
+                res = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': welcome_msg}).execute()
+                
+                if res.data:
+                    st.session_state.messages.append({"id": res.data[0]['id'], "role": "assistant", "content": welcome_msg})
+                st.rerun()
         
         st.divider()
         retrieval_chain = inicializar_cadena()
 
+        # Cargar Historial
         if "messages" not in st.session_state:
             st.session_state.messages = []
             history = supabase.table('chat_history').select('id, role, message').eq('user_id', user_id).order('created_at').execute()
             for row in history.data:
                 st.session_state.messages.append({"id": row['id'], "role": row['role'], "content": row['message']})
+            
+            # Si es usuario nuevo
             if not st.session_state.messages:
-                 st.session_state.messages.append({"id": None, "role": "assistant", "content": f"¡Hola {user_name}! Soy tu asistente. ¿En qué te ayudo?"})
+                welcome_msg = f"¡Hola {user_name}! Soy tu asistente del reglamento académico. ¿En qué te puedo ayudar hoy?"
+                res = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': welcome_msg}).execute()
+                if res.data:
+                    st.session_state.messages.append({"id": res.data[0]['id'], "role": "assistant", "content": welcome_msg})
 
+        # Mostrar Mensajes
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
                 if msg["role"] == "assistant" and msg["id"]:
                     col_fb1, col_fb2, _ = st.columns([1,1,8])
+                    
+                    # Chequear si ya votó (para visual) - Opcional, aquí solo mostramos botones simples para rapidez
                     if col_fb1.button("👍", key=f"up_{msg['id']}"):
                         supabase.table('feedback').insert({"message_id": msg['id'], "user_id": user_id, "rating": "good"}).execute()
                         st.toast("¡Gracias!")
@@ -163,6 +184,7 @@ if st.session_state["authentication_status"] is True:
                         supabase.table('feedback').insert({"message_id": msg['id'], "user_id": user_id, "rating": "bad"}).execute()
                         st.toast("¡Gracias!")
 
+        # Input Chat
         if prompt := st.chat_input("Escribe tu duda..."):
             st.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"): st.markdown(prompt)
@@ -207,14 +229,12 @@ if st.session_state["authentication_status"] is True:
         else:
             # === LÓGICA DE FILTROS CRUZADOS ===
             
-            # 1. Recuperar valores actuales de los filtros (si existen en session_state)
             current_career = st.session_state.get("filter_career", "Todas")
             current_semester_str = st.session_state.get("filter_semester", "Todos")
 
-            # 2. Calcular Opciones de CARRERA (Basado en el Semestre seleccionado)
+            # Calcular Opciones de CARRERA
             if current_semester_str != "Todos":
                 sem_num = int(current_semester_str.split(" ")[1])
-                # Solo carreras que tengan ramos en ese semestre
                 valid_careers_data = [s['career'] for s in subjects_data if s['semester'] == sem_num]
                 unique_careers = sorted(list(set(valid_careers_data)))
             else:
@@ -222,9 +242,8 @@ if st.session_state["authentication_status"] is True:
             
             career_options = ["Todas"] + unique_careers
 
-            # 3. Calcular Opciones de SEMESTRE (Basado en la Carrera seleccionada)
+            # Calcular Opciones de SEMESTRE
             if current_career != "Todas":
-                # Solo semestres disponibles para esa carrera
                 valid_semesters_data = [s['semester'] for s in subjects_data if s['career'] == current_career]
                 unique_semesters = sorted(list(set(valid_semesters_data)))
             else:
@@ -232,36 +251,28 @@ if st.session_state["authentication_status"] is True:
             
             semester_options = ["Todos"] + [f"Semestre {s}" for s in unique_semesters]
 
-            # 4. Renderizar Widgets con las opciones calculadas
+            # Renderizar Widgets
             c_filter1, c_filter2, c_reset = st.columns([2, 2, 1])
             
             with c_filter1:
-                # Usamos key="filter_career" para que se guarde en session_state automáticamente
-                # index=0 fuerza a "Todas" si la opción anterior ya no es válida (ej: cambiaste de sem 8 a sem 1)
-                try:
-                    idx_car = career_options.index(current_career)
-                except ValueError:
-                    idx_car = 0 # Si la carrera seleccionada ya no es válida para el nuevo semestre, volver a Todas
-                
+                try: idx_car = career_options.index(current_career)
+                except ValueError: idx_car = 0 
                 selected_career = st.selectbox("📂 Carrera:", options=career_options, index=idx_car, key="filter_career")
 
             with c_filter2:
-                try:
-                    idx_sem = semester_options.index(current_semester_str)
-                except ValueError:
-                    idx_sem = 0
-                
+                try: idx_sem = semester_options.index(current_semester_str)
+                except ValueError: idx_sem = 0
                 selected_semester = st.selectbox("⏳ Semestre:", options=semester_options, index=idx_sem, key="filter_semester")
             
             with c_reset:
-                st.write("") # Espacio
+                st.write("") 
                 st.write("") 
                 if st.button("🔄 Reset"):
                     del st.session_state["filter_career"]
                     del st.session_state["filter_semester"]
                     st.rerun()
 
-            # 5. Filtrar la Lista Final de Asignaturas
+            # Filtrar Lista
             filtered_list = subjects_data
             if selected_career != "Todas":
                 filtered_list = [s for s in filtered_list if s['career'] == selected_career]
@@ -276,7 +287,7 @@ if st.session_state["authentication_status"] is True:
 
             st.divider()
 
-            # --- SECCIÓN DE INSCRIPCIÓN (Igual) ---
+            # --- SECCIÓN DE INSCRIPCIÓN ---
             if sel_subj_name:
                 sid = subjects_dict[sel_subj_name]
                 secs = supabase.table('sections').select('*').eq('subject_id', sid).execute().data
