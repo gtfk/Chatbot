@@ -1,4 +1,4 @@
-# Versión 14.0 (FINAL: Soporte Multi-idioma Español/Inglés + Todas las funciones anteriores)
+# Versión 14.1 (FINAL: Traducción completa corregida en Login y Registro)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -27,7 +27,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- DICCIONARIO DE TRADUCCIONES (EL CORAZÓN DEL MULTI-IDIOMA) ---
+# --- DICCIONARIO DE TRADUCCIONES ---
 TEXTS = {
     "es": {
         "title": "Asistente Académico Duoc UC",
@@ -83,7 +83,7 @@ TEXTS = {
         "col_val": "Valoración",
         "col_com": "Comentario",
         # Auth
-        "auth_error": "Datos incorrectos",
+        "auth_error": "Usuario o contraseña incorrectos",
         "reg_title": "Registrarse",
         "reg_name": "Nombre Completo",
         "reg_email": "Email",
@@ -150,7 +150,7 @@ TEXTS = {
         "col_val": "Rating",
         "col_com": "Comment",
         # Auth
-        "auth_error": "Incorrect credentials",
+        "auth_error": "Incorrect username or password",
         "reg_title": "Sign Up",
         "reg_name": "Full Name",
         "reg_email": "Email",
@@ -188,7 +188,7 @@ def stream_data(text):
         yield word + " "
         time.sleep(0.02)
 
-# --- CHATBOT ENGINE (Adaptado para idioma) ---
+# --- CHATBOT ENGINE ---
 @st.cache_resource
 def inicializar_cadena(language_code):
     loader = PyPDFLoader("reglamento.pdf")
@@ -202,7 +202,6 @@ def inicializar_cadena(language_code):
     retriever = EnsembleRetriever(retrievers=[bm25_retriever, vector_retriever], weights=[0.7, 0.3])
     llm = ChatGroq(api_key=GROQ_API_KEY, model="llama-3.1-8b-instant", temperature=0.1)
     
-    # Seleccionamos la instrucción base según el idioma
     base_instruction = TEXTS[language_code]["system_prompt"]
     
     prompt_template = base_instruction + """
@@ -239,21 +238,16 @@ def fetch_all_users():
 credentials = fetch_all_users()
 authenticator = stauth.Authenticate(credentials, 'chatbot_duoc_cookie', 'abcdefg123456', cookie_expiry_days=30)
 
-# --- SELECTOR DE IDIOMA EN SIDEBAR ---
+# --- SELECTOR DE IDIOMA (GLOBAL) ---
 with st.sidebar:
-    # Mostramos el logo
     st.image(LOGO_BANNER_URL)
-    
-    # Selector
     lang_option = st.selectbox("🌐 Language / Idioma", ["Español", "English"])
     
-    # Guardamos en variable corta 'lang' ('es' o 'en')
     if lang_option == "Español":
         lang = "es"
     else:
         lang = "en"
     
-    # Variable 't' tendrá todos los textos del idioma actual
     t = TEXTS[lang]
 
 # --- CABECERA ---
@@ -272,7 +266,6 @@ if st.session_state["authentication_status"] is True:
         else: st.stop()
     user_id = st.session_state.user_id
 
-    # Barra Superior (Usuario + Logout)
     c1, c2 = st.columns([0.8, 0.2])
     c1.caption(f"{t['login_success']} {user_name} ({user_email})")
     if c2.button(t["logout_btn"], use_container_width=True):
@@ -280,7 +273,7 @@ if st.session_state["authentication_status"] is True:
         st.session_state.clear()
         st.rerun()
 
-    # --- PESTAÑAS (TRADUCIDAS) ---
+    # --- PESTAÑAS ---
     tab1, tab2, tab3 = st.tabs([t["tab1"], t["tab2"], t["tab3"]])
 
     # --- TAB 1: CHATBOT ---
@@ -307,10 +300,8 @@ if st.session_state["authentication_status"] is True:
                     st.error(f"Error: {e}")
         
         st.divider()
-        # Inicializamos la IA pasando el idioma seleccionado
         retrieval_chain = inicializar_cadena(lang)
 
-        # Cargar Historial
         if "messages" not in st.session_state:
             st.session_state.messages = []
             history = supabase.table('chat_history').select('id, role, message').eq('user_id', user_id).eq('is_visible', True).order('created_at').execute()
@@ -323,7 +314,6 @@ if st.session_state["authentication_status"] is True:
                 if res.data:
                     st.session_state.messages.append({"id": res.data[0]['id'], "role": "assistant", "content": welcome_msg})
 
-        # Mostrar Mensajes
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
@@ -352,7 +342,6 @@ if st.session_state["authentication_status"] is True:
                                 st.session_state[reason_key] = False 
                                 st.rerun()
 
-        # Input Chat
         if prompt := st.chat_input(t["chat_placeholder"]):
             st.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"): st.markdown(prompt)
@@ -397,34 +386,19 @@ if st.session_state["authentication_status"] is True:
             cur_career = st.session_state.get("filter_career", t["filter_all"])
             cur_sem = st.session_state.get("filter_semester", t["filter_all_m"])
 
-            # Filtros dinámicos (simplificados para no repetir lógica 10 veces)
-            # ... (Misma lógica de filtrado que antes, solo cambiando 'Todas' por t['filter_all']) ...
-            
-            # Nota: Para simplificar el código del multi-idioma en filtros bidireccionales, 
-            # usaremos valores crudos en lógica y traducidos en display si fuera necesario, 
-            # pero aquí asumiremos que las carreras/semestres vienen de BD en español.
-            
-            # Renderizado de filtros
             c_f1, c_f2, c_res = st.columns([2, 2, 1])
-            
-            # Lista de carreras disponibles
             careers_list = sorted(list(set([s['career'] for s in subjects_data if s['career']])))
             c_opts = [t["filter_all"]] + careers_list
-            
-            # Lista de semestres
             sem_list = sorted(list(set([s['semester'] for s in subjects_data if s['semester']])))
             s_opts = [t["filter_all_m"]] + [f"Semestre {s}" for s in sem_list]
 
-            with c_f1:
-                sel_car = st.selectbox(t["filter_career"], c_opts)
-            with c_f2:
-                sel_sem = st.selectbox(t["filter_sem"], s_opts)
+            with c_f1: sel_car = st.selectbox(t["filter_career"], c_opts)
+            with c_f2: sel_sem = st.selectbox(t["filter_sem"], s_opts)
             with c_res:
                 st.write("")
                 st.write("")
                 if st.button(t["reset_btn"]): st.rerun()
 
-            # Aplicar filtros
             filtered = subjects_data
             if sel_car != t["filter_all"]:
                 filtered = [s for s in filtered if s['career'] == sel_car]
@@ -502,8 +476,6 @@ if st.session_state["authentication_status"] is True:
                         fb = item['feedback'][0] if item['feedback'] else {'rating': 'N/A', 'comment': ''}
                         icon = "✅" if fb['rating'] == "good" else "❌"
                         status = "Activo" if item['is_visible'] else "Archivado"
-                        
-                        # Fetch question (simplified)
                         try:
                             q = supabase.table('chat_history').select('message').eq('user_id', item['user_id']).eq('role', 'user').lt('created_at', item['created_at']).order('created_at', desc=True).limit(1).execute()
                             q_text = q.data[0]['message'] if q.data else "N/A"
@@ -526,18 +498,18 @@ if st.session_state["authentication_status"] is True:
 else:
     # --- LOGIN ---
     authenticator.login(location='main')
-    if st.session_state["authentication_status"] is False: st.error(TEXTS["es"]["auth_error"]) # Default error
+    if st.session_state["authentication_status"] is False: st.error(t["auth_error"])
     
     with st.sidebar:
-        # Usamos t (que por defecto es español si no se ha cargado session, o podemos forzar un idioma)
-        st.subheader("Registrarse / Sign Up")
+        # === AQUI ESTÁ LA CORRECCIÓN ===
+        st.subheader(t["reg_title"]) # Usa la variable traducida
         with st.form("reg"):
-            n = st.text_input("Name")
-            e = st.text_input("Email")
-            p = st.text_input("Pass", type="password")
-            if st.form_submit_button("Create"):
+            n = st.text_input(t["reg_name"]) # Traducido
+            e = st.text_input(t["reg_email"]) # Traducido
+            p = st.text_input(t["reg_pass"], type="password") # Traducido
+            if st.form_submit_button(t["reg_btn"]): # Traducido
                 h = stauth.Hasher([p]).generate()[0]
                 try:
                     supabase.table('profiles').insert({'full_name': n, 'email': e, 'password_hash': h}).execute()
-                    st.success("OK")
+                    st.success(t["reg_success"])
                 except: st.error("Error")
