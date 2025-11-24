@@ -1,4 +1,4 @@
-# Versión 11.1 (FINAL: Feedback en Tiempo Real - Muestra TODO)
+# Versión 12.0 (FINAL: Auditoría Completa con Pregunta del Alumno)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -150,7 +150,6 @@ if st.session_state["authentication_status"] is True:
                     if res.data:
                         st.session_state.messages.append({"id": res.data[0]['id'], "role": "assistant", "content": welcome_msg})
                     
-                    # Limpiar estados de formularios abiertos
                     keys_to_remove = [k for k in st.session_state.keys() if k.startswith("show_reason_")]
                     for k in keys_to_remove:
                         del st.session_state[k]
@@ -178,16 +177,14 @@ if st.session_state["authentication_status"] is True:
                 if res.data:
                     st.session_state.messages.append({"id": res.data[0]['id'], "role": "assistant", "content": welcome_msg})
 
-        # Mostrar Mensajes y Feedback con Comentarios
+        # Mostrar Mensajes
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
                 
-                # Solo el asistente tiene feedback
                 if msg["role"] == "assistant" and msg["id"]:
                     col_fb1, col_fb2, _ = st.columns([1,1,8])
                     
-                    # --- BOTÓN LIKE ---
                     if col_fb1.button("👍", key=f"up_{msg['id']}"):
                         supabase.table('feedback').insert({
                             "message_id": msg['id'], 
@@ -197,7 +194,6 @@ if st.session_state["authentication_status"] is True:
                         }).execute()
                         st.toast("¡Gracias por tu valoración!")
 
-                    # --- BOTÓN DISLIKE ---
                     reason_key = f"show_reason_{msg['id']}"
                     
                     if col_fb2.button("👎", key=f"down_{msg['id']}"):
@@ -267,7 +263,6 @@ if st.session_state["authentication_status"] is True:
         if not subjects_data:
             st.warning("No hay datos.")
         else:
-            # Filtros Cruzados
             current_career = st.session_state.get("filter_career", "Todas")
             current_semester_str = st.session_state.get("filter_semester", "Todos")
 
@@ -363,7 +358,7 @@ if st.session_state["authentication_status"] is True:
                         st.cache_data.clear()
                         st.rerun()
 
-    # --- PESTAÑA 3: AUDITORÍA (PROTEGIDA) ---
+    # --- PESTAÑA 3: AUDITORÍA (PROTEGIDA DUOC2025 + PREGUNTA USUARIO) ---
     with tab3:
         st.header("🕵️ Auditoría de Feedback (Zona Admin)")
         
@@ -371,16 +366,16 @@ if st.session_state["authentication_status"] is True:
         
         if admin_pass == "DUOC2025":
             st.success("🔓 Acceso Concedido")
-            st.info("Visualizando TODO el feedback recibido (Chats visibles y archivados).")
+            st.info("Visualizando feedback completo con la pregunta original del alumno.")
 
             if st.button("🔄 Actualizar Tabla"):
                 st.rerun()
 
             try:
-                # --- CORRECCIÓN AQUÍ: Quitamos el filtro .eq('is_visible', False) ---
-                # Ahora mostramos TODO el feedback, sin importar si el chat está oculto o no
+                # 1. Traer mensajes del BOT que tienen feedback
+                # Importante traer el user_id para buscar su pregunta especifica
                 response = supabase.table('chat_history')\
-                    .select('created_at, role, message, is_visible, feedback(rating, comment)')\
+                    .select('created_at, role, message, is_visible, user_id, feedback(rating, comment)')\
                     .not_.is_('feedback', 'null')\
                     .order('created_at', desc=True)\
                     .execute()
@@ -391,7 +386,13 @@ if st.session_state["authentication_status"] is True:
                     st.warning("No hay feedback registrado en la base de datos.")
                 else:
                     data_para_tabla = []
-                    for item in mensajes_con_feedback:
+                    
+                    # Barra de progreso porque esto puede tomar un segundo si son muchos
+                    progress_bar = st.progress(0)
+                    total_items = len(mensajes_con_feedback)
+
+                    for i, item in enumerate(mensajes_con_feedback):
+                        # Procesar feedback
                         if item['feedback']:
                             fb = item['feedback'][0]
                             rating = fb['rating']
@@ -403,14 +404,34 @@ if st.session_state["authentication_status"] is True:
                         icon = "✅ Positivo" if rating == "good" else "❌ Negativo"
                         estado_chat = "Activo" if item['is_visible'] else "Archivado"
                         
+                        # --- MAGIA: BUSCAR LA PREGUNTA DEL ALUMNO ---
+                        # Buscamos el último mensaje de ESTE usuario, que sea 'user', ANTES de la respuesta del bot
+                        try:
+                            q_response = supabase.table('chat_history')\
+                                .select('message')\
+                                .eq('user_id', item['user_id'])\
+                                .eq('role', 'user')\
+                                .lt('created_at', item['created_at'])\
+                                .order('created_at', desc=True)\
+                                .limit(1)\
+                                .execute()
+                            
+                            pregunta_alumno = q_response.data[0]['message'] if q_response.data else "(Pregunta no encontrada)"
+                        except:
+                            pregunta_alumno = "(Error buscando pregunta)"
+
                         data_para_tabla.append({
                             "Fecha": item['created_at'][:16].replace("T", " "),
                             "Estado": estado_chat,
+                            "Pregunta Alumno": pregunta_alumno, # COLUMNA NUEVA
+                            "Respuesta Bot": item['message'],
                             "Valoración": icon,
-                            "Comentario": comment,
-                            "Mensaje Bot": item['message']
+                            "Comentario": comment
                         })
+                        
+                        progress_bar.progress((i + 1) / total_items)
                     
+                    progress_bar.empty() # Borrar barra al terminar
                     st.dataframe(data_para_tabla, use_container_width=True)
 
             except Exception as e:
