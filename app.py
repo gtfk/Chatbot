@@ -1,4 +1,4 @@
-# Versión 8.1 (Soft Delete: Ocultar chat pero mantener Feedback para análisis)
+# Versión 10.1 (FINAL: Chatbot + Inscripción + Admin con Clave "DUOC2025")
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -131,41 +131,37 @@ if st.session_state["authentication_status"] is True:
         st.session_state.clear()
         st.rerun()
 
-    tab1, tab2 = st.tabs(["Chatbot de Reglamento", "Inscripción de Asignaturas"])
+    # --- DEFINICIÓN DE PESTAÑAS ---
+    tab1, tab2, tab3 = st.tabs(["Chatbot de Reglamento", "Inscripción de Asignaturas", "🔒 Admin / Auditoría"])
 
     # --- PESTAÑA 1: CHATBOT ---
     with tab1:
-        # === NUEVA LÓGICA DE LIMPIEZA (SOFT DELETE) ===
         if st.button("Limpiar Historial del Chat", use_container_width=True, key="clear_chat"):
             with st.spinner("Archivando conversación..."):
                 try:
-                    # En lugar de .delete(), hacemos .update() poniendo is_visible = False
-                    # Esto OCULTA los mensajes pero MANTIENE el feedback en la base de datos
+                    # Soft Delete
                     supabase.table('chat_history').update({'is_visible': False}).eq('user_id', user_id).execute()
                     
                     st.session_state.messages = []
                     
-                    # Mensaje de bienvenida nuevo
                     welcome_msg = f"¡Hola {user_name}! Historial archivado. Los datos de feedback se han guardado."
                     res = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': welcome_msg}).execute()
                     
                     if res.data:
                         st.session_state.messages.append({"id": res.data[0]['id'], "role": "assistant", "content": welcome_msg})
                     
-                    st.success("¡Chat limpio!")
+                    st.success("¡Chat limpio visualmente!")
                     time.sleep(1)
                     st.rerun()
                 except Exception as e:
                     st.error(f"Error al limpiar: {e}")
-                    st.info("Nota: Asegúrate de haber ejecutado el SQL: ALTER TABLE chat_history ADD COLUMN is_visible BOOLEAN DEFAULT TRUE;")
         
         st.divider()
         retrieval_chain = inicializar_cadena()
 
-        # Cargar Historial (SOLO LOS VISIBLES)
+        # Cargar Historial (VISIBLES)
         if "messages" not in st.session_state:
             st.session_state.messages = []
-            # Agregamos el filtro .eq('is_visible', True)
             history = supabase.table('chat_history').select('id, role, message').eq('user_id', user_id).eq('is_visible', True).order('created_at').execute()
             
             for row in history.data:
@@ -183,7 +179,6 @@ if st.session_state["authentication_status"] is True:
                 st.markdown(msg["content"])
                 if msg["role"] == "assistant" and msg["id"]:
                     col_fb1, col_fb2, _ = st.columns([1,1,8])
-                    
                     if col_fb1.button("👍", key=f"up_{msg['id']}"):
                         supabase.table('feedback').insert({"message_id": msg['id'], "user_id": user_id, "rating": "good"}).execute()
                         st.toast("¡Gracias!")
@@ -195,7 +190,6 @@ if st.session_state["authentication_status"] is True:
         if prompt := st.chat_input("Escribe tu duda..."):
             st.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"): st.markdown(prompt)
-            # Guardamos el mensaje (por defecto is_visible=True en la BD)
             supabase.table('chat_history').insert({'user_id': user_id, 'role': 'user', 'message': prompt}).execute()
             
             with st.chat_message("assistant"):
@@ -207,7 +201,7 @@ if st.session_state["authentication_status"] is True:
             st.session_state.messages.append({"id": res_bot.data[0]['id'], "role": "assistant", "content": resp})
             st.rerun()
 
-    # --- PESTAÑA 2: INSCRIPCIÓN (FILTROS INTELIGENTES) ---
+    # --- PESTAÑA 2: INSCRIPCIÓN ---
     with tab2:
         st.header("Inscripción de Asignaturas")
 
@@ -232,9 +226,9 @@ if st.session_state["authentication_status"] is True:
         subjects_data = get_all_subjects()
 
         if not subjects_data:
-            st.warning("No hay datos. Carga la base de datos.")
+            st.warning("No hay datos.")
         else:
-            # Lógica de Filtros Cruzados
+            # Filtros Cruzados
             current_career = st.session_state.get("filter_career", "Todas")
             current_semester_str = st.session_state.get("filter_semester", "Todos")
 
@@ -329,6 +323,56 @@ if st.session_state["authentication_status"] is True:
                         st.success("Eliminado")
                         st.cache_data.clear()
                         st.rerun()
+
+    # --- PESTAÑA 3: AUDITORÍA (PROTEGIDA CON CONTRASEÑA "DUOC2025") ---
+    with tab3:
+        st.header("🕵️ Auditoría de Feedback (Zona Admin)")
+        
+        # === SEGURIDAD DE ACCESO ===
+        admin_pass = st.text_input("🔑 Ingrese Contraseña de Administrador:", type="password")
+        
+        if admin_pass == "DUOC2025":
+            st.success("🔓 Acceso Concedido")
+            st.info("Aquí se muestran los mensajes que el usuario ocultó (borró) pero que recibieron Feedback.")
+
+            if st.button("🔄 Actualizar Tabla"):
+                st.rerun()
+
+            try:
+                # Consulta para traer datos ocultos con feedback
+                response = supabase.table('chat_history')\
+                    .select('created_at, role, message, feedback(rating)')\
+                    .eq('is_visible', False)\
+                    .not_.is_('feedback', 'null')\
+                    .order('created_at', desc=True)\
+                    .execute()
+
+                mensajes_ocultos = response.data
+
+                if not mensajes_ocultos:
+                    st.warning("No hay mensajes archivados con feedback todavía.")
+                else:
+                    data_para_tabla = []
+                    for item in mensajes_ocultos:
+                        rating = item['feedback'][0]['rating'] if item['feedback'] else "N/A"
+                        icon = "✅ Positivo" if rating == "good" else "❌ Negativo"
+                        
+                        data_para_tabla.append({
+                            "Fecha": item['created_at'][:16].replace("T", " "),
+                            "Rol": item['role'],
+                            "Valoración": icon,
+                            "Mensaje Original": item['message']
+                        })
+                    
+                    st.dataframe(data_para_tabla, use_container_width=True)
+
+            except Exception as e:
+                st.error(f"Error consultando base de datos: {e}")
+        
+        elif admin_pass:
+            st.error("⛔ Contraseña Incorrecta")
+        else:
+            st.warning("⚠️ Esta zona es solo para administradores.")
 
 else:
     authenticator.login(location='main')
