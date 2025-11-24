@@ -1,4 +1,4 @@
-# Versión 10.1 (FINAL: Chatbot + Inscripción + Admin con Clave "DUOC2025")
+# Versión 11.0 (Feedback Negativo con Comentario + Admin Mejorado)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -150,6 +150,11 @@ if st.session_state["authentication_status"] is True:
                     if res.data:
                         st.session_state.messages.append({"id": res.data[0]['id'], "role": "assistant", "content": welcome_msg})
                     
+                    # Limpiar estados de formularios abiertos
+                    keys_to_remove = [k for k in st.session_state.keys() if k.startswith("show_reason_")]
+                    for k in keys_to_remove:
+                        del st.session_state[k]
+
                     st.success("¡Chat limpio visualmente!")
                     time.sleep(1)
                     st.rerun()
@@ -173,18 +178,56 @@ if st.session_state["authentication_status"] is True:
                 if res.data:
                     st.session_state.messages.append({"id": res.data[0]['id'], "role": "assistant", "content": welcome_msg})
 
-        # Mostrar Mensajes
+        # Mostrar Mensajes y Feedback con Comentarios
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
+                
+                # Solo el asistente tiene feedback
                 if msg["role"] == "assistant" and msg["id"]:
                     col_fb1, col_fb2, _ = st.columns([1,1,8])
+                    
+                    # --- BOTÓN LIKE (Rápido) ---
                     if col_fb1.button("👍", key=f"up_{msg['id']}"):
-                        supabase.table('feedback').insert({"message_id": msg['id'], "user_id": user_id, "rating": "good"}).execute()
-                        st.toast("¡Gracias!")
+                        supabase.table('feedback').insert({
+                            "message_id": msg['id'], 
+                            "user_id": user_id, 
+                            "rating": "good",
+                            "comment": None # Like no necesita comentario obligatorio
+                        }).execute()
+                        st.toast("¡Gracias por tu valoración!")
+
+                    # --- BOTÓN DISLIKE (Abre Formulario) ---
+                    # Usamos session_state para controlar si se muestra la cajita de texto
+                    reason_key = f"show_reason_{msg['id']}"
+                    
                     if col_fb2.button("👎", key=f"down_{msg['id']}"):
-                        supabase.table('feedback').insert({"message_id": msg['id'], "user_id": user_id, "rating": "bad"}).execute()
-                        st.toast("¡Gracias!")
+                        # Al hacer clic, activamos la visibilidad del formulario para ESTE mensaje
+                        st.session_state[reason_key] = True
+
+                    # Si la variable de estado es True, mostramos el formulario
+                    if st.session_state.get(reason_key, False):
+                        with st.form(key=f"form_{msg['id']}"):
+                            st.write("Cuéntanos, ¿qué salió mal?")
+                            comment_text = st.text_area("Comentario (Opcional):", placeholder="Ej: La respuesta es incorrecta o confusa...")
+                            
+                            col_sub1, col_sub2 = st.columns([1, 1])
+                            with col_sub1:
+                                if st.form_submit_button("Enviar Reporte"):
+                                    supabase.table('feedback').insert({
+                                        "message_id": msg['id'], 
+                                        "user_id": user_id, 
+                                        "rating": "bad",
+                                        "comment": comment_text # Guardamos lo que escribió
+                                    }).execute()
+                                    st.toast("Reporte enviado. ¡Gracias por ayudarnos a mejorar!")
+                                    st.session_state[reason_key] = False # Cerramos formulario
+                                    st.rerun()
+                            
+                            with col_sub2:
+                                if st.form_submit_button("Cancelar"):
+                                    st.session_state[reason_key] = False # Cerramos sin guardar
+                                    st.rerun()
 
         # Input Chat
         if prompt := st.chat_input("Escribe tu duda..."):
@@ -339,9 +382,9 @@ if st.session_state["authentication_status"] is True:
                 st.rerun()
 
             try:
-                # Consulta para traer datos ocultos con feedback
+                # Consulta ACTUALIZADA para traer también el comentario
                 response = supabase.table('chat_history')\
-                    .select('created_at, role, message, feedback(rating)')\
+                    .select('created_at, role, message, feedback(rating, comment)')\
                     .eq('is_visible', False)\
                     .not_.is_('feedback', 'null')\
                     .order('created_at', desc=True)\
@@ -354,13 +397,21 @@ if st.session_state["authentication_status"] is True:
                 else:
                     data_para_tabla = []
                     for item in mensajes_ocultos:
-                        rating = item['feedback'][0]['rating'] if item['feedback'] else "N/A"
+                        if item['feedback']:
+                            fb = item['feedback'][0]
+                            rating = fb['rating']
+                            comment = fb.get('comment', '') # Obtenemos el comentario
+                        else:
+                            rating = "N/A"
+                            comment = ""
+
                         icon = "✅ Positivo" if rating == "good" else "❌ Negativo"
                         
                         data_para_tabla.append({
                             "Fecha": item['created_at'][:16].replace("T", " "),
                             "Rol": item['role'],
                             "Valoración": icon,
+                            "Comentario del Usuario": comment, # Columna nueva
                             "Mensaje Original": item['message']
                         })
                     
