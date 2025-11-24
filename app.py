@@ -1,4 +1,4 @@
-# Versión 17.1 (FINAL: Textos Corregidos + Tema vía Config.toml + Emojis Fix)
+# Versión 18.0 (FINAL: Fix "Keyboard" Icon + Logo Visible + Tema Light Profesional)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -29,45 +29,63 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- CSS SOLO PARA FUENTES Y DETALLES FINOS (Colores van en config.toml) ---
+# --- CSS CORREGIDO (No rompe iconos del sistema) ---
 st.markdown("""
     <style>
-    /* 1. Fuente Global y Emojis (Google Style) */
+    /* 1. Fuente Global para Texto de Contenido (No forzamos en toda la UI para no romper iconos) */
     @import url('https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&family=Source+Sans+Pro:wght@400;600;700&display=swap');
     
-    html, body, [class*="st-"], .stMarkdown, .stButton, .stSelectbox, .stTextInput, .stTextArea {
-        font-family: 'Source Sans Pro', 'Noto Color Emoji', 'Segoe UI Emoji', 'Apple Color Emoji', sans-serif !important;
+    /* Aplicamos fuente solo a textos legibles, inputs y botones de usuario */
+    .stApp, .stMarkdown, .stTextInput input, .stSelectbox, .stTextArea textarea, h1, h2, h3, p, li {
+        font-family: 'Calibri', 'Segoe UI', 'Source Sans Pro', 'Noto Color Emoji', sans-serif !important;
+        color: #002342; /* Azul Duoc Base */
     }
 
-    /* 2. Ajuste fino de Botones (Para que el texto sea legible sobre amarillo) */
+    /* 2. Fondo Principal Blanco */
+    .stApp {
+        background-color: #FFFFFF;
+    }
+
+    /* 3. Ajuste de Inputs */
+    .stTextInput input, .stSelectbox div[data-baseweb="select"], .stTextArea textarea {
+        background-color: #FFFFFF !important;
+        border: 1px solid #ced4da !important;
+        border-radius: 8px !important;
+    }
+    
+    /* 4. Botones Amarillo Duoc */
     div.stButton > button {
-        color: #002342 !important; /* Azul oscuro para contraste con el amarillo */
-        font-weight: bold;
-        border-radius: 6px;
+        background-color: #FFB81C !important; 
+        color: #002342 !important;
+        border: none !important;
+        font-weight: bold !important;
+        border-radius: 6px !important;
         transition: all 0.3s ease;
     }
     div.stButton > button:hover {
         transform: scale(1.02);
-        border: 1px solid #FFFFFF;
+        filter: brightness(0.95);
     }
     
-    /* 3. Estilo del Chat: Burbujas Personalizadas */
-    /* Mensaje del Usuario (Azul Noche más claro) */
+    /* 5. Chat: Burbujas */
     [data-testid="stChatMessage"] {
-        background-color: #2C3E50;
-        border: 1px solid #34495E;
+        background-color: #F0F2F6;
+        border: 1px solid #E6E9EF;
         border-radius: 12px;
     }
-    /* Mensaje del Asistente (Gris Oscuro Integrado) */
     div[data-testid="chatAvatarIcon-assistant"] + div {
-        background-color: #343A40;
-        border: 1px solid #495057;
+        background-color: #E8F4FD;
+        border: 1px solid #D1E8FA;
         border-radius: 12px;
     }
 
-    /* 4. Tablas (Dataframes) */
-    [data-testid="stDataFrame"] {
-        background-color: transparent;
+    /* 6. Sidebar (Fondo Gris muy suave) */
+    [data-testid="stSidebar"] {
+        background-color: #001529; /* Azul Noche para contraste */
+    }
+    /* Texto en Sidebar blanco */
+    [data-testid="stSidebar"] p, [data-testid="stSidebar"] span, [data-testid="stSidebar"] label {
+        color: #FFFFFF !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -86,9 +104,9 @@ TEXTS = {
         "login_title": "Iniciar Sesión",
         "login_user": "Correo Institucional",
         "login_pass": "Contraseña",
-        "login_btn": "Ingresar", # CAMBIADO (Antes: Ingresar al Portal)
+        "login_btn": "Ingresar",
         "login_failed": "❌ Credenciales inválidas",
-        "login_welcome": "¡Bienvenido al Asistente!", # CAMBIADO (Antes: Bienvenido a la Intranet)
+        "login_welcome": "¡Bienvenido al Asistente!",
         "chat_clear_btn": "🧹 Limpiar Conversación",
         "chat_cleaning": "Procesando solicitud...",
         "chat_cleaned": "¡Historial limpiado!",
@@ -97,7 +115,7 @@ TEXTS = {
         "chat_placeholder": "Ej: ¿Con qué nota apruebo el ramo?",
         "chat_thinking": "Consultando reglamento...",
         "feedback_thanks": "¡Gracias por tu feedback! 👍",
-        "feedback_report_sent": "Reporte enviado al área académica.",
+        "feedback_report_sent": "Reporte enviado.",
         "feedback_modal_title": "¿Qué podemos mejorar?",
         "feedback_modal_placeholder": "Ej: La información sobre asistencia no es precisa...",
         "btn_send": "Enviar Comentario",
@@ -155,9 +173,9 @@ TEXTS = {
         "login_title": "Student Login",
         "login_user": "Institutional Email",
         "login_pass": "Password",
-        "login_btn": "Login", # CAMBIADO
+        "login_btn": "Login",
         "login_failed": "❌ Invalid credentials",
-        "login_welcome": "Welcome to the Assistant!", # CAMBIADO
+        "login_welcome": "Welcome to the Assistant!",
         "chat_clear_btn": "🧹 Clear Conversation",
         "chat_cleaning": "Processing...",
         "chat_cleaned": "History cleared!",
@@ -166,7 +184,7 @@ TEXTS = {
         "chat_placeholder": "Ex: What is the passing grade?",
         "chat_thinking": "Consulting rulebook...",
         "feedback_thanks": "Thanks for your feedback! 👍",
-        "feedback_report_sent": "Report sent to academic area.",
+        "feedback_report_sent": "Report sent.",
         "feedback_modal_title": "What went wrong?",
         "feedback_modal_placeholder": "Ex: The information is inaccurate...",
         "btn_send": "Send Comment",
@@ -280,9 +298,15 @@ def fetch_all_users():
         return users_dict
     except: return {}
 
-# --- SELECTOR DE IDIOMA ---
+# --- BARRA LATERAL (Logo con Fondo Blanco + Selector) ---
 with st.sidebar:
-    st.image(LOGO_BANNER_URL)
+    # TRUCO: Logo dentro de un div blanco para que se vea el "UC"
+    st.markdown(f"""
+        <div style="background-color: white; padding: 15px; border-radius: 10px; text-align: center; margin-bottom: 20px;">
+            <img src="{LOGO_BANNER_URL}" style="width: 100%; max-width: 200px;">
+        </div>
+    """, unsafe_allow_html=True)
+    
     lang_option = st.selectbox("🌐 Language / Idioma", ["Español 🇨🇱", "English 🇺🇸"], format_func=lambda x: TEXTS["es" if "Español" in x else "en"]["label"])
     if "Español" in lang_option: lang_code = "es"
     else: lang_code = "en"
