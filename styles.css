@@ -1,12 +1,11 @@
 /* 1. Importamos fuente de emojis de Google y fuentes base */
 @import url('https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&family=Source+Sans+Pro:wght@400;600;700;900&display=swap');
 
-/* 2. CONFIGURACIÓN DE FUENTES (CORREGIDO) */
-/* Aplicamos la fuente al cuerpo general, pero SIN !important en selectores genéricos */
-/* Esto permite que los iconos de Streamlit (Material Icons) se carguen correctamente */
+/* 2. CONFIGURACIÓN DE FUENTES */
+/* Eliminamos el color forzado para que use el blanco del tema oscuro */
 html, body, p, h1, h2, h3, h4, h5, h6, li, label, .stTextInput, .stTextArea, .stSelectbox {
     font-family: 'Source Sans Pro', 'Noto Color Emoji', sans-serif;
-    color: #002342; /* Azul base */
+    /* color: #002342;  <-- ELIMINADO: Esto causaba el texto oscuro invisible */
 }
 
 /* 3. BOTONES (Estilo Azul Duoc con texto Blanco) */
