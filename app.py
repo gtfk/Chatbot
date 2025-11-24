@@ -1,4 +1,4 @@
-# Versión 14.1 (FINAL: Traducción completa corregida en Login y Registro)
+# Versión 14.2 (FINAL: Login 100% Traducido + Manual Auth)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -15,6 +15,7 @@ from supabase import create_client, Client
 import streamlit_authenticator as stauth
 import time
 from datetime import time as dt_time
+import bcrypt # NECESARIO PARA VERIFICAR CONTRASEÑA MANUALMENTE
 
 # --- URLs DE LOGOS ---
 LOGO_BANNER_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/a/aa/Logo_DuocUC.svg/2560px-Logo_DuocUC.svg.png"
@@ -37,6 +38,13 @@ TEXTS = {
         "tab1": "Chatbot de Reglamento",
         "tab2": "Inscripción de Asignaturas",
         "tab3": "🔒 Admin / Auditoría",
+        # Login Manual
+        "login_title": "Iniciar Sesión",
+        "login_user": "Correo Electrónico",
+        "login_pass": "Contraseña",
+        "login_btn": "Entrar",
+        "login_failed": "❌ Usuario o contraseña incorrectos",
+        "login_welcome": "¡Bienvenido de nuevo!",
         # Chatbot
         "chat_clear_btn": "Limpiar Historial del Chat",
         "chat_cleaning": "Archivando conversación...",
@@ -82,15 +90,13 @@ TEXTS = {
         "col_a": "Respuesta Bot",
         "col_val": "Valoración",
         "col_com": "Comentario",
-        # Auth
-        "auth_error": "Usuario o contraseña incorrectos",
-        "reg_title": "Registrarse",
+        # Auth Sidebar
+        "reg_header": "Registrarse",
         "reg_name": "Nombre Completo",
         "reg_email": "Email",
         "reg_pass": "Contraseña",
         "reg_btn": "Crear Cuenta",
         "reg_success": "¡Cuenta creada! Por favor inicia sesión.",
-        # Prompt del Sistema (IA)
         "system_prompt": """
         INSTRUCCIÓN PRINCIPAL: Responde SIEMPRE en español.
         PERSONAJE: Eres un asistente experto en el reglamento académico de Duoc UC.
@@ -104,6 +110,13 @@ TEXTS = {
         "tab1": "Rulebook Chatbot",
         "tab2": "Course Enrollment",
         "tab3": "🔒 Admin / Audit",
+        # Login Manual
+        "login_title": "Login",
+        "login_user": "Email Address",
+        "login_pass": "Password",
+        "login_btn": "Sign In",
+        "login_failed": "❌ Incorrect email or password",
+        "login_welcome": "Welcome back!",
         # Chatbot
         "chat_clear_btn": "Clear Chat History",
         "chat_cleaning": "Archiving conversation...",
@@ -149,15 +162,13 @@ TEXTS = {
         "col_a": "Bot Answer",
         "col_val": "Rating",
         "col_com": "Comment",
-        # Auth
-        "auth_error": "Incorrect username or password",
-        "reg_title": "Sign Up",
+        # Auth Sidebar
+        "reg_header": "Sign Up",
         "reg_name": "Full Name",
         "reg_email": "Email",
         "reg_pass": "Password",
         "reg_btn": "Create Account",
         "reg_success": "Account created! Please log in.",
-        # Prompt del Sistema (IA)
         "system_prompt": """
         MAIN INSTRUCTION: ALWAYS respond in English.
         CHARACTER: You are an expert assistant on the Duoc UC academic regulations.
@@ -222,21 +233,16 @@ def inicializar_cadena(language_code):
     retrieval_chain = create_retrieval_chain(retriever, document_chain)
     return retrieval_chain
 
-# --- AUTH ---
+# --- FETCH USERS (Para verificar login) ---
 def fetch_all_users():
     try:
+        # Traemos todo para verificar manualmente
         response = supabase.table('profiles').select("email, full_name, password_hash").execute()
-        if not response.data: return {'usernames': {}}
-        credentials = {'usernames': {}}
-        for user in response.data:
-            credentials['usernames'][user['email']] = {
-                'email': user['email'], 'name': user['full_name'], 'password': user['password_hash']
-            }
-        return credentials
-    except: return {'usernames': {}}
-
-credentials = fetch_all_users()
-authenticator = stauth.Authenticate(credentials, 'chatbot_duoc_cookie', 'abcdefg123456', cookie_expiry_days=30)
+        if not response.data: return {}
+        # Convertimos a diccionario para búsqueda rápida
+        users_dict = {u['email']: u for u in response.data}
+        return users_dict
+    except: return {}
 
 # --- SELECTOR DE IDIOMA (GLOBAL) ---
 with st.sidebar:
@@ -255,21 +261,30 @@ col_title1, col_title2 = st.columns([0.1, 0.9])
 with col_title1: st.image(LOGO_ICON_URL, width=70)
 with col_title2: st.title(t["title"])
 
-# --- APP PRINCIPAL ---
+# --- ESTADO DE AUTENTICACIÓN ---
+if "authentication_status" not in st.session_state:
+    st.session_state["authentication_status"] = None
+
+# ==========================================
+# LÓGICA DE APP PRINCIPAL (SI ESTÁ LOGUEADO)
+# ==========================================
 if st.session_state["authentication_status"] is True:
     user_name = st.session_state["name"]
     user_email = st.session_state["username"]
     
+    # Obtener ID de usuario
     if 'user_id' not in st.session_state:
         user_id_response = supabase.table('profiles').select('id').eq('email', user_email).execute()
         if user_id_response.data: st.session_state.user_id = user_id_response.data[0]['id']
         else: st.stop()
     user_id = st.session_state.user_id
 
+    # Header
     c1, c2 = st.columns([0.8, 0.2])
     c1.caption(f"{t['login_success']} {user_name} ({user_email})")
     if c2.button(t["logout_btn"], use_container_width=True):
-        authenticator.logout()
+        # Logout Manual
+        st.session_state["authentication_status"] = None
         st.session_state.clear()
         st.rerun()
 
@@ -283,21 +298,16 @@ if st.session_state["authentication_status"] is True:
                 try:
                     supabase.table('chat_history').update({'is_visible': False}).eq('user_id', user_id).execute()
                     st.session_state.messages = []
-                    
                     welcome_msg = t["chat_welcome_clean"].format(name=user_name)
                     res = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': welcome_msg}).execute()
-                    
                     if res.data:
                         st.session_state.messages.append({"id": res.data[0]['id'], "role": "assistant", "content": welcome_msg})
-                    
                     keys_to_remove = [k for k in st.session_state.keys() if k.startswith("show_reason_")]
                     for k in keys_to_remove: del st.session_state[k]
-
                     st.success(t["chat_cleaned"])
                     time.sleep(1)
                     st.rerun()
-                except Exception as e:
-                    st.error(f"Error: {e}")
+                except Exception as e: st.error(f"Error: {e}")
         
         st.divider()
         retrieval_chain = inicializar_cadena(lang)
@@ -307,7 +317,6 @@ if st.session_state["authentication_status"] is True:
             history = supabase.table('chat_history').select('id, role, message').eq('user_id', user_id).eq('is_visible', True).order('created_at').execute()
             for row in history.data:
                 st.session_state.messages.append({"id": row['id'], "role": row['role'], "content": row['message']})
-            
             if not st.session_state.messages:
                 welcome_msg = t["chat_welcome"].format(name=user_name)
                 res = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': welcome_msg}).execute()
@@ -319,15 +328,11 @@ if st.session_state["authentication_status"] is True:
                 st.markdown(msg["content"])
                 if msg["role"] == "assistant" and msg["id"]:
                     col_fb1, col_fb2, _ = st.columns([1,1,8])
-                    
                     if col_fb1.button("👍", key=f"up_{msg['id']}"):
                         supabase.table('feedback').insert({"message_id": msg['id'], "user_id": user_id, "rating": "good"}).execute()
                         st.toast(t["feedback_thanks"])
-
                     reason_key = f"show_reason_{msg['id']}"
-                    if col_fb2.button("👎", key=f"down_{msg['id']}"):
-                        st.session_state[reason_key] = True
-
+                    if col_fb2.button("👎", key=f"down_{msg['id']}"): st.session_state[reason_key] = True
                     if st.session_state.get(reason_key, False):
                         with st.form(key=f"form_{msg['id']}"):
                             st.write(t["feedback_modal_title"])
@@ -346,20 +351,17 @@ if st.session_state["authentication_status"] is True:
             st.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"): st.markdown(prompt)
             supabase.table('chat_history').insert({'user_id': user_id, 'role': 'user', 'message': prompt}).execute()
-            
             with st.chat_message("assistant"):
                 with st.spinner(t["chat_thinking"]):
                     response = retrieval_chain.invoke({"input": prompt, "user_name": user_name})
                     resp = response["answer"]
                 st.write_stream(stream_data(resp))
-            
             res_bot = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': resp}).execute()
             st.session_state.messages.append({"id": res_bot.data[0]['id'], "role": "assistant", "content": resp})
 
     # --- TAB 2: INSCRIPCIÓN ---
     with tab2:
         st.header(t["enroll_title"])
-
         @st.cache_data(ttl=60)
         def get_user_schedule(uid):
             regs = supabase.table('registrations').select('section_id').eq('user_id', uid).execute().data
@@ -379,41 +381,32 @@ if st.session_state["authentication_status"] is True:
             return supabase.table('subjects').select('id, name, career, semester').order('name').execute().data
 
         subjects_data = get_all_subjects()
-
-        if not subjects_data:
-            st.warning("No data.")
+        if not subjects_data: st.warning("No data.")
         else:
             cur_career = st.session_state.get("filter_career", t["filter_all"])
             cur_sem = st.session_state.get("filter_semester", t["filter_all_m"])
-
             c_f1, c_f2, c_res = st.columns([2, 2, 1])
             careers_list = sorted(list(set([s['career'] for s in subjects_data if s['career']])))
             c_opts = [t["filter_all"]] + careers_list
             sem_list = sorted(list(set([s['semester'] for s in subjects_data if s['semester']])))
             s_opts = [t["filter_all_m"]] + [f"Semestre {s}" for s in sem_list]
-
             with c_f1: sel_car = st.selectbox(t["filter_career"], c_opts)
             with c_f2: sel_sem = st.selectbox(t["filter_sem"], s_opts)
             with c_res:
                 st.write("")
-                st.write("")
+                st.write("") 
                 if st.button(t["reset_btn"]): st.rerun()
-
             filtered = subjects_data
-            if sel_car != t["filter_all"]:
-                filtered = [s for s in filtered if s['career'] == sel_car]
+            if sel_car != t["filter_all"]: filtered = [s for s in filtered if s['career'] == sel_car]
             if sel_sem != t["filter_all_m"]:
                 try:
                     num = int(sel_sem.split(" ")[1])
                     filtered = [s for s in filtered if s['semester'] == num]
                 except: pass
-
             s_dict = {s['name']: s['id'] for s in filtered}
-
             st.markdown(f"##### {t['search_label']}")
             sel_name = st.selectbox("Search", s_dict.keys(), index=None, placeholder=t["search_placeholder"], label_visibility="collapsed")
             st.divider()
-
             if sel_name:
                 sid = s_dict[sel_name]
                 secs = supabase.table('sections').select('*').eq('subject_id', sid).execute().data
@@ -440,7 +433,6 @@ if st.session_state["authentication_status"] is True:
                                             st.cache_data.clear()
                                             st.rerun()
                                 else: c4.button(t["btn_full"], disabled=True, key=sec['id'])
-
         st.subheader(t["my_schedule"])
         sch, _ = get_user_schedule(user_id)
         if not sch: st.info(t["no_schedule"])
@@ -461,7 +453,6 @@ if st.session_state["authentication_status"] is True:
     with tab3:
         st.header(t["admin_title"])
         admin_pass = st.text_input(t["admin_pass_label"], type="password")
-        
         if admin_pass == ADMIN_PASSWORD:
             st.success(t["admin_success"])
             st.info(t["admin_info"])
@@ -480,7 +471,6 @@ if st.session_state["authentication_status"] is True:
                             q = supabase.table('chat_history').select('message').eq('user_id', item['user_id']).eq('role', 'user').lt('created_at', item['created_at']).order('created_at', desc=True).limit(1).execute()
                             q_text = q.data[0]['message'] if q.data else "N/A"
                         except: q_text = "Error"
-
                         data_tbl.append({
                             t["col_date"]: item['created_at'][:16].replace("T", " "),
                             t["col_status"]: status,
@@ -495,21 +485,53 @@ if st.session_state["authentication_status"] is True:
             except Exception as e: st.error(str(e))
         elif admin_pass: st.error(t["auth_error"])
 
+# ==========================================
+# LOGIN MANUAL (Si NO está logueado)
+# ==========================================
 else:
-    # --- LOGIN ---
-    authenticator.login(location='main')
-    if st.session_state["authentication_status"] is False: st.error(t["auth_error"])
+    # Usamos 2 columnas para centrar un poco el login
+    col_L, col_Main, col_R = st.columns([1, 2, 1])
     
+    with col_Main:
+        st.subheader(t["login_title"])
+        
+        with st.form("login_form"):
+            input_email = st.text_input(t["login_user"])
+            input_pass = st.text_input(t["login_pass"], type="password")
+            
+            submit = st.form_submit_button(t["login_btn"], use_container_width=True)
+            
+            if submit:
+                all_users = fetch_all_users()
+                
+                if input_email in all_users:
+                    stored_hash = all_users[input_email]['password_hash']
+                    # Verificamos contraseña usando bcrypt
+                    if bcrypt.checkpw(input_pass.encode('utf-8'), stored_hash.encode('utf-8')):
+                        # EXITO
+                        st.session_state["authentication_status"] = True
+                        st.session_state["name"] = all_users[input_email]['full_name']
+                        st.session_state["username"] = input_email
+                        st.toast(t["login_welcome"])
+                        time.sleep(0.5)
+                        st.rerun()
+                    else:
+                        st.error(t["login_failed"])
+                else:
+                    st.error(t["login_failed"])
+
+    # Barra Lateral de Registro
     with st.sidebar:
-        # === AQUI ESTÁ LA CORRECCIÓN ===
-        st.subheader(t["reg_title"]) # Usa la variable traducida
+        st.subheader(t["reg_header"])
         with st.form("reg"):
-            n = st.text_input(t["reg_name"]) # Traducido
-            e = st.text_input(t["reg_email"]) # Traducido
-            p = st.text_input(t["reg_pass"], type="password") # Traducido
-            if st.form_submit_button(t["reg_btn"]): # Traducido
-                h = stauth.Hasher([p]).generate()[0]
+            n = st.text_input(t["reg_name"])
+            e = st.text_input(t["reg_email"])
+            p = st.text_input(t["reg_pass"], type="password")
+            if st.form_submit_button(t["reg_btn"]):
+                # Generamos hash compatible con bcrypt
+                hashed_bytes = bcrypt.hashpw(p.encode('utf-8'), bcrypt.gensalt())
+                hashed_str = hashed_bytes.decode('utf-8')
                 try:
-                    supabase.table('profiles').insert({'full_name': n, 'email': e, 'password_hash': h}).execute()
+                    supabase.table('profiles').insert({'full_name': n, 'email': e, 'password_hash': hashed_str}).execute()
                     st.success(t["reg_success"])
                 except: st.error("Error")
