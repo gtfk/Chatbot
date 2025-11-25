@@ -1,4 +1,4 @@
-# Versión 31.0 (FINAL: Fix KeyError forgot_email + OTP + Todo Integrado)
+# Versión 31.0 (FINAL: Flujo OTP Numérico + CSS Externo + Todo Integrado)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -37,7 +37,7 @@ def load_css(file_name):
 
 load_css("styles.css")
 
-# --- DICCIONARIO DE TRADUCCIONES (CORREGIDO) ---
+# --- DICCIONARIO DE TRADUCCIONES ---
 TEXTS = {
     "es": {
         "label": "Español 🇨🇱",
@@ -54,21 +54,16 @@ TEXTS = {
         "login_failed": "❌ Credenciales inválidas.",
         "login_welcome": "¡Bienvenido al Asistente!",
         
-        # Recuperación OTP
+        # OTP
         "forgot_header": "¿Olvidaste tu contraseña?",
-        "forgot_email": "Ingresa tu correo registrado", # <-- AGREGADO DE VUELTA
+        "forgot_email": "Ingresa tu correo registrado",
         "forgot_step1_btn": "Enviar Código de Acceso",
-        "forgot_step1_msg": "Te enviaremos un código de 6 dígitos a tu correo.",
-        "forgot_step2_label": "Ingresa el Código (OTP)",
+        "forgot_step1_msg": "📩 Hemos enviado un código de 6 dígitos a tu correo. Revisa tu bandeja de entrada (y spam).",
+        "forgot_step2_label": "Ingresa el Código (Ej: 123456)",
         "forgot_step2_btn": "Verificar y Entrar",
-        "forgot_success": "✅ Código verificado. Ahora cambia tu contraseña en el menú lateral.",
-        "forgot_error_otp": "❌ Código inválido o expirado.",
+        "forgot_success": "✅ Código verificado. Ve al menú lateral para cambiar tu contraseña definitiva.",
+        "forgot_error_otp": "❌ Código incorrecto o expirado.",
         
-        "reset_title": "Restablecer Contraseña",
-        "reset_pass_new": "Nueva Contraseña",
-        "reset_btn_final": "Guardar Nueva Contraseña",
-        "reset_success": "✅ Contraseña actualizada.",
-
         "change_pass_header": "Cambiar Contraseña",
         "new_pass": "Nueva Contraseña",
         "change_pass_btn": "Actualizar Clave",
@@ -123,20 +118,15 @@ TEXTS = {
         "login_failed": "❌ Invalid credentials.",
         "login_welcome": "Welcome!",
         
-        # OTP Recovery
+        # OTP
         "forgot_header": "Forgot password?",
-        "forgot_email": "Enter registered email", # <-- AGREGADO DE VUELTA
+        "forgot_email": "Enter registered email",
         "forgot_step1_btn": "Send Access Code",
-        "forgot_step1_msg": "We will send a 6-digit code to your email.",
-        "forgot_step2_label": "Enter Code (OTP)",
+        "forgot_step1_msg": "📩 We sent a 6-digit code to your email.",
+        "forgot_step2_label": "Enter Code (Ex: 123456)",
         "forgot_step2_btn": "Verify & Login",
-        "forgot_success": "✅ Code verified. Please change password in sidebar.",
+        "forgot_success": "✅ Verified. Change password in sidebar.",
         "forgot_error_otp": "❌ Invalid code.",
-
-        "reset_title": "Reset Password",
-        "reset_pass_new": "New Password",
-        "reset_btn_final": "Save Password",
-        "reset_success": "✅ Password updated.",
 
         "change_pass_header": "Change Password",
         "new_pass": "New Password",
@@ -196,11 +186,13 @@ def init_supabase_client():
 
 supabase = init_supabase_client()
 
+# --- STREAMING ---
 def stream_data(text):
     for word in text.split(" "):
         yield word + " "
         time.sleep(0.02)
 
+# --- CHATBOT ENGINE ---
 @st.cache_resource
 def inicializar_cadena(language_code):
     loader = PyPDFLoader("reglamento.pdf")
@@ -213,6 +205,7 @@ def inicializar_cadena(language_code):
     bm25_retriever.k = 7
     retriever = EnsembleRetriever(retrievers=[bm25_retriever, vector_retriever], weights=[0.7, 0.3])
     llm = ChatGroq(api_key=GROQ_API_KEY, model="llama-3.1-8b-instant", temperature=0.1)
+    
     prompt_template = TEXTS[language_code]["system_prompt"] + """
     CONTEXT: {context}
     QUESTION: {input}
@@ -238,29 +231,6 @@ if "authentication_status" not in st.session_state:
     st.session_state["authentication_status"] = None
 
 try:
-    # Check Recovery via Magic Link (Backup)
-    query_params = st.query_params
-    if "access_token" in query_params and "type" in query_params and query_params["type"] == "recovery":
-        session = supabase.auth.set_session(query_params["access_token"], query_params.get("refresh_token", ""))
-        if session:
-            st.session_state["authentication_status"] = True
-            st.session_state["user_id"] = session.user.id
-            st.session_state["username"] = session.user.email
-            st.session_state["name"] = "Usuario"
-            st.warning(t["reset_title"])
-            with st.form("reset_final_form", enter_to_submit=False):
-                new_password = st.text_input(t["reset_pass_new"], type="password")
-                if st.form_submit_button(t["reset_btn_final"]):
-                    if len(new_password) >= 6:
-                        supabase.auth.update_user({"password": new_password})
-                        st.success(t["reset_success"])
-                        st.query_params.clear()
-                        time.sleep(2)
-                        st.rerun()
-                    else: st.error("Min 6 chars")
-            st.stop()
-
-    # Check Session & Fix Profile
     session = supabase.auth.get_session()
     if session and not st.session_state["authentication_status"]:
         st.session_state["authentication_status"] = True
@@ -288,11 +258,13 @@ if st.session_state["authentication_status"] is True:
     c1, c2 = st.columns([0.8, 0.2])
     c1.caption(f"{t['login_success']} {user_name}")
     if c2.button(t["logout_btn"], use_container_width=True):
-        supabase.auth.sign_out()
+        try:
+            supabase.auth.sign_out() 
+        except: pass
         st.session_state.clear()
         st.rerun()
 
-    # BARRA LATERAL: CAMBIAR CLAVE
+    # BARRA LATERAL: CAMBIAR CLAVE (Disponible tras OTP)
     with st.sidebar:
         st.markdown("---")
         with st.expander(t["change_pass_header"]):
@@ -308,7 +280,7 @@ if st.session_state["authentication_status"] is True:
 
     tab1, tab2, tab3 = st.tabs([t["tab1"], t["tab2"], t["tab3"]])
 
-    # --- CHAT ---
+    # --- TAB 1: CHAT ---
     with tab1:
         if st.button(t["chat_clear_btn"], use_container_width=True):
             supabase.table('chat_history').update({'is_visible': False}).eq('user_id', user_id).execute()
@@ -482,6 +454,9 @@ if st.session_state["authentication_status"] is True:
                 st.dataframe(clean_data, use_container_width=True)
             else: st.info("No data")
 
+# ==========================================
+# PANTALLA DE LOGIN (NO LOGUEADO)
+# ==========================================
 else:
     cL, cM, cR = st.columns([1, 2, 1])
     with cM:
@@ -496,31 +471,32 @@ else:
                 except Exception as e: 
                     st.error(f"Error de Login: {e}")
         
-        # --- RECUPERACIÓN OTP (MODO INTERACTIVO) ---
+        # --- RECUPERACIÓN OTP (MODO PASO A PASO) ---
         with st.expander(t["forgot_header"]):
-            # Paso 1: Enviar Código
+            
+            # Estado de recuperación (si se envió el código)
             if "recovery_mode" not in st.session_state:
+                # PASO 1: Ingresar correo
                 with st.form("send_otp_form", enter_to_submit=False):
                     rec_e = st.text_input(t["forgot_email"])
                     if st.form_submit_button(t["forgot_step1_btn"]):
                         if rec_e:
                             try:
-                                # Enviamos código de 6 dígitos
+                                # Envía código de 6 dígitos (OTP)
                                 supabase.auth.sign_in_with_otp({"email": rec_e})
                                 st.session_state["recovery_mode"] = True
                                 st.session_state["recovery_email"] = rec_e
                                 st.rerun()
                             except Exception as e: st.error(f"Error: {e}")
                         else: st.warning("Ingresa un correo.")
-            
-            # Paso 2: Verificar Código
             else:
+                # PASO 2: Ingresar código recibido
                 st.info(t["forgot_step1_msg"])
                 with st.form("verify_otp_form", enter_to_submit=False):
                     otp_code = st.text_input(t["forgot_step2_label"])
                     if st.form_submit_button(t["forgot_step2_btn"]):
                         try:
-                            # Verificamos y logueamos
+                            # Verifica código y loguea
                             res = supabase.auth.verify_otp({"email": st.session_state["recovery_email"], "token": otp_code, "type": "email"})
                             if res.user:
                                 st.session_state["authentication_status"] = True
