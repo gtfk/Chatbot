@@ -1,4 +1,4 @@
-# Versión 29.0 (FINAL: Chat Auto-Reparable + Fix APIError + Todo Integrado)
+# Versión 30.0 (FINAL: Filtros Bidireccionales Restaurados + Todo Integrado)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -88,12 +88,12 @@ TEXTS = {
         "btn_send": "Enviar",
         "btn_cancel": "Omitir",
         "enroll_title": "Toma de Ramos 2025",
-        "filter_career": "📂 Carrera:",
-        "filter_sem": "⏳ Semestre:",
-        "filter_all": "Todas",
-        "filter_all_m": "Todos",
-        "reset_btn": "🔄 Limpiar",
-        "search_label": "📚 Buscar:",
+        "filter_career": "📂 Filtrar por Carrera:",
+        "filter_sem": "⏳ Filtrar por Semestre:",
+        "filter_all": "Todas las Carreras",
+        "filter_all_m": "Todos los Semestres",
+        "reset_btn": "🔄 Limpiar Filtros",
+        "search_label": "📚 Buscar Asignatura:",
         "btn_enroll": "Inscribir",
         "msg_enrolled": "✅ ¡Inscrito!",
         "msg_conflict": "⛔ Tope de Horario",
@@ -186,7 +186,7 @@ if not GROQ_API_KEY or not SUPABASE_URL or not SUPABASE_KEY:
     st.error("Error: Faltan claves de API.")
     st.stop()
 
-# --- INIT ---
+# --- SUPABASE ---
 @st.cache_resource
 def init_supabase_client():
     return create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -235,7 +235,7 @@ if "authentication_status" not in st.session_state:
     st.session_state["authentication_status"] = None
 
 try:
-    # 1. Check Recovery or Session
+    # Check Recovery
     query_params = st.query_params
     if "access_token" in query_params and "type" in query_params and query_params["type"] == "recovery":
         session = supabase.auth.set_session(query_params["access_token"], query_params.get("refresh_token", ""))
@@ -244,8 +244,6 @@ try:
             st.session_state["user_id"] = session.user.id
             st.session_state["username"] = session.user.email
             st.session_state["name"] = "Usuario"
-            
-            st.divider()
             st.warning(t["reset_title"])
             with st.form("reset_final_form", enter_to_submit=False):
                 new_password = st.text_input(t["reset_pass_new"], type="password")
@@ -259,21 +257,16 @@ try:
                     else: st.error("Min 6 chars")
             st.stop()
 
-    # 2. Normal Session Check
+    # Check Session & Fix Profile
     session = supabase.auth.get_session()
     if session and not st.session_state["authentication_status"]:
         st.session_state["authentication_status"] = True
         st.session_state["user_id"] = session.user.id
         st.session_state["username"] = session.user.email
-        
-        # --- AUTO-REPARACIÓN DE PERFIL (FIX APIError) ---
         try:
-            # Intentamos leer. Si falla o no existe, usamos upsert
             prof = supabase.table('profiles').select('full_name').eq('id', session.user.id).execute()
-            if prof.data:
-                st.session_state["name"] = prof.data[0]['full_name']
+            if prof.data: st.session_state["name"] = prof.data[0]['full_name']
             else:
-                # Si no existe, lo creamos ahora mismo
                 n = session.user.user_metadata.get('full_name', 'Estudiante')
                 supabase.table('profiles').upsert({'id': session.user.id, 'email': session.user.email, 'full_name': n}).execute()
                 st.session_state["name"] = n
@@ -323,15 +316,21 @@ if st.session_state["authentication_status"] is True:
 
         if "messages" not in st.session_state:
             st.session_state.messages = []
-            h = supabase.table('chat_history').select('*').eq('user_id', user_id).eq('is_visible', True).order('created_at').execute()
-            for r in h.data:
+            history = supabase.table('chat_history').select('*').eq('user_id', user_id).eq('is_visible', True).order('created_at').execute()
+            for r in history.data:
                 st.session_state.messages.append({"id": r['id'], "role": r['role'], "content": r['message']})
             if not st.session_state.messages:
                 msg = t["chat_welcome"].format(name=user_name)
                 try:
                     res = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': msg}).execute()
                     st.session_state.messages.append({"id": res.data[0]['id'], "role": "assistant", "content": msg})
-                except: pass
+                except Exception as e:
+                    # Auto-reparación en chat si falla
+                    try:
+                        supabase.table('profiles').upsert({'id': user_id, 'email': user_email, 'full_name': user_name}).execute()
+                        res = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': msg}).execute()
+                        st.session_state.messages.append({"id": res.data[0]['id'], "role": "assistant", "content": msg})
+                    except: st.error("Error de base de datos. Intenta reloguear.")
 
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
@@ -357,17 +356,12 @@ if st.session_state["authentication_status"] is True:
             st.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"): st.markdown(prompt)
             
-            # INTENTO ROBUSTO DE INSERTAR USUARIO
+            # Chat con autoreparación
             try:
                 supabase.table('chat_history').insert({'user_id': user_id, 'role': 'user', 'message': prompt}).execute()
-            except Exception as e:
-                # Si falla, intentamos REPARAR el perfil y reintentar
-                try:
-                    supabase.table('profiles').upsert({'id': user_id, 'email': user_email, 'full_name': user_name}).execute()
-                    supabase.table('chat_history').insert({'user_id': user_id, 'role': 'user', 'message': prompt}).execute()
-                except Exception as e2:
-                    st.error(f"Error crítico DB: {e2}")
-                    st.stop()
+            except:
+                supabase.table('profiles').upsert({'id': user_id, 'email': user_email, 'full_name': user_name}).execute()
+                supabase.table('chat_history').insert({'user_id': user_id, 'role': 'user', 'message': prompt}).execute()
             
             with st.chat_message("assistant"):
                 with st.spinner(t["chat_thinking"]):
@@ -377,18 +371,52 @@ if st.session_state["authentication_status"] is True:
             r = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': resp}).execute()
             st.session_state.messages.append({"id": r.data[0]['id'], "role": "assistant", "content": resp})
 
-    # --- TAB 2 & 3 (MANTENIDOS IGUAL) ---
+    # --- TAB 2: INSCRIPCION INTELIGENTE ---
     with tab2:
         st.header(t["enroll_title"])
         subs = supabase.table('subjects').select('*').order('name').execute().data
         if subs:
-            cars = sorted(list(set([s['career'] for s in subs])))
-            sems = sorted(list(set([s['semester'] for s in subs])))
-            c1, c2, c3 = st.columns([2,2,1])
-            sel_car = c1.selectbox(t["filter_career"], [t["filter_all"]] + cars)
-            sel_sem = c2.selectbox(t["filter_sem"], [t["filter_all_m"]] + [f"Sem {x}" for x in sems])
-            if c3.button(t["reset_btn"]): st.rerun()
+            # Recuperar estados de filtro o usar default "Todas"
+            state_car = st.session_state.get("f_car", t["filter_all"])
+            state_sem = st.session_state.get("f_sem", t["filter_all_m"])
 
+            # Calcular listas VALIDAS cruzadas
+            # 1. Si hay carrera seleccionada, filtrar semestres disponibles para ELLA
+            if state_car != t["filter_all"]:
+                valid_sems = sorted(list(set([s['semester'] for s in subs if s['career'] == state_car])))
+            else:
+                valid_sems = sorted(list(set([s['semester'] for s in subs])))
+
+            # 2. Si hay semestre seleccionado, filtrar carreras disponibles para ESE semestre
+            if state_sem != t["filter_all_m"]:
+                try:
+                    sem_num = int(state_sem.split()[1])
+                    valid_cars = sorted(list(set([s['career'] for s in subs if s['semester'] == sem_num])))
+                except:
+                    valid_cars = sorted(list(set([s['career'] for s in subs])))
+            else:
+                valid_cars = sorted(list(set([s['career'] for s in subs])))
+
+            # Renderizar filtros
+            c1, c2, c3 = st.columns([2,2,1])
+            
+            # Selectbox Carrera
+            # Aseguramos que la selección actual esté en la lista válida, si no, reset a "Todas"
+            opts_car = [t["filter_all"]] + valid_cars
+            idx_car = opts_car.index(state_car) if state_car in opts_car else 0
+            sel_car = c1.selectbox(t["filter_career"], opts_car, index=idx_car, key="f_car")
+
+            # Selectbox Semestre
+            opts_sem = [t["filter_all_m"]] + [f"Sem {x}" for x in valid_sems]
+            idx_sem = opts_sem.index(state_sem) if state_sem in opts_sem else 0
+            sel_sem = c2.selectbox(t["filter_sem"], opts_sem, index=idx_sem, key="f_sem")
+
+            if c3.button(t["reset_btn"]):
+                del st.session_state["f_car"]
+                del st.session_state["f_sem"]
+                st.rerun()
+
+            # Filtrar Data Final
             filt = subs
             if sel_car != t["filter_all"]: filt = [s for s in filt if s['career'] == sel_car]
             if sel_sem != t["filter_all_m"]: filt = [s for s in filt if s['semester'] == int(sel_sem.split()[1])]
@@ -401,7 +429,8 @@ if st.session_state["authentication_status"] is True:
                 my_regs = [r['section_id'] for r in supabase.table('registrations').select('section_id').eq('user_id', user_id).execute().data]
                 my_sch = supabase.table('sections').select('*').in_('id', my_regs).execute().data
                 
-                if sub_map[target] in [s['subject_id'] for s in my_sch]: st.info(t["msg_already"])
+                if sub_map[target] in [s['subject_id'] for s in my_sch]:
+                    st.info(t["msg_already"])
                 else:
                     for sec in secs:
                         with st.container(border=True):
@@ -409,7 +438,10 @@ if st.session_state["authentication_status"] is True:
                             cap = sec['capacity'] - (cnt if cnt else 0)
                             cc1, cc2, cc3 = st.columns([3,2,2])
                             cc1.write(f"**{sec['section_code']}**")
-                            cc2.write(f"{sec['day_of_week']} {sec['start_time'][:5]}-{sec['end_time'][:5]}")
+                            cc1.caption(sec['professor_name'])
+                            cc2.write(f"{sec['day_of_week']}")
+                            cc2.caption(f"{sec['start_time'][:5]} - {sec['end_time'][:5]}")
+                            
                             if cap > 0:
                                 if cc3.button(f"{t['btn_enroll']} ({cap})", key=sec['id']):
                                     conflict = False
@@ -437,6 +469,7 @@ if st.session_state["authentication_status"] is True:
                         supabase.table('registrations').delete().eq('id', r['id']).execute()
                         st.rerun()
 
+    # TAB 3: ADMIN
     with tab3:
         st.header(t["admin_title"])
         adm_p = st.text_input(t["admin_pass_label"], type="password")
@@ -473,7 +506,8 @@ else:
                 try:
                     res = supabase.auth.sign_in_with_password({"email": e, "password": p})
                     st.rerun()
-                except: st.error(t["login_failed"])
+                except Exception as e: 
+                    st.error(f"Error de Login: {e}")
         
         with st.expander(t["forgot_header"]):
             with st.form("rec", enter_to_submit=False):
@@ -496,5 +530,6 @@ else:
                     if res.user:
                         supabase.table('profiles').upsert({'id': res.user.id, 'email': re, 'full_name': rn}).execute()
                         st.success(t["reg_success"])
-                    else: st.info("Check email")
+                    else:
+                        st.info("Revisa tu correo.")
                 except Exception as ex: st.error(str(ex))
