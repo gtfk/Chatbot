@@ -1,4 +1,4 @@
-# Versión 30.0 (FINAL: Filtros Bidireccionales Restaurados + Todo Integrado)
+# Versión 30.0 (FINAL: Recuperación por Código OTP + Todo Integrado)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -27,19 +27,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- PUENTE JS (MAGIC LINK FIX) ---
-st.markdown("""
-<script>
-if (window.location.hash && window.location.hash.includes('access_token')) {
-    const hashParams = new URLSearchParams(window.location.hash.substring(1));
-    const newUrl = new URL(window.location.href);
-    hashParams.forEach((value, key) => { newUrl.searchParams.set(key, value); });
-    newUrl.hash = '';
-    window.location.href = newUrl.toString();
-}
-</script>
-""", unsafe_allow_html=True)
-
 # --- CARGAR CSS ---
 def load_css(file_name):
     try:
@@ -50,7 +37,7 @@ def load_css(file_name):
 
 load_css("styles.css")
 
-# --- DICCIONARIO DE TRADUCCIONES ---
+# --- DICCIONARIO DE TRADUCCIONES (CON OTP) ---
 TEXTS = {
     "es": {
         "label": "Español 🇨🇱",
@@ -66,14 +53,16 @@ TEXTS = {
         "login_btn": "Ingresar",
         "login_failed": "❌ Credenciales inválidas.",
         "login_welcome": "¡Bienvenido al Asistente!",
+        
+        # Recuperación OTP
         "forgot_header": "¿Olvidaste tu contraseña?",
-        "forgot_email": "Ingresa tu correo registrado",
-        "forgot_btn": "Recuperar Contraseña",
-        "forgot_success": "✅ Enlace enviado.",
-        "reset_title": "Restablecer Contraseña",
-        "reset_pass_new": "Nueva Contraseña",
-        "reset_btn_final": "Guardar Nueva Contraseña",
-        "reset_success": "✅ Contraseña actualizada.",
+        "forgot_step1_btn": "Enviar Código de Acceso",
+        "forgot_step1_msg": "Te enviaremos un código de 6 dígitos a tu correo.",
+        "forgot_step2_label": "Ingresa el Código (OTP)",
+        "forgot_step2_btn": "Verificar y Entrar",
+        "forgot_success": "✅ Código verificado. Ahora cambia tu contraseña en el menú lateral.",
+        "forgot_error_otp": "❌ Código inválido o expirado.",
+        
         "change_pass_header": "Cambiar Contraseña",
         "new_pass": "Nueva Contraseña",
         "change_pass_btn": "Actualizar Clave",
@@ -90,10 +79,10 @@ TEXTS = {
         "enroll_title": "Toma de Ramos 2025",
         "filter_career": "📂 Filtrar por Carrera:",
         "filter_sem": "⏳ Filtrar por Semestre:",
-        "filter_all": "Todas las Carreras",
-        "filter_all_m": "Todos los Semestres",
-        "reset_btn": "🔄 Limpiar Filtros",
-        "search_label": "📚 Buscar Asignatura:",
+        "filter_all": "Todas",
+        "filter_all_m": "Todos",
+        "reset_btn": "🔄 Limpiar",
+        "search_label": "📚 Buscar:",
         "btn_enroll": "Inscribir",
         "msg_enrolled": "✅ ¡Inscrito!",
         "msg_conflict": "⛔ Tope de Horario",
@@ -127,14 +116,16 @@ TEXTS = {
         "login_btn": "Login",
         "login_failed": "❌ Invalid credentials.",
         "login_welcome": "Welcome!",
+        
+        # Recuperación OTP
         "forgot_header": "Forgot password?",
-        "forgot_email": "Registered email",
-        "forgot_btn": "Recover",
-        "forgot_success": "✅ Link sent.",
-        "reset_title": "Reset Password",
-        "reset_pass_new": "New Password",
-        "reset_btn_final": "Save Password",
-        "reset_success": "✅ Password updated.",
+        "forgot_step1_btn": "Send Access Code",
+        "forgot_step1_msg": "We will send a 6-digit code to your email.",
+        "forgot_step2_label": "Enter Code (OTP)",
+        "forgot_step2_btn": "Verify & Login",
+        "forgot_success": "✅ Code verified. Please change password in sidebar.",
+        "forgot_error_otp": "❌ Invalid code.",
+
         "change_pass_header": "Change Password",
         "new_pass": "New Password",
         "change_pass_btn": "Update Password",
@@ -193,11 +184,13 @@ def init_supabase_client():
 
 supabase = init_supabase_client()
 
+# --- STREAMING ---
 def stream_data(text):
     for word in text.split(" "):
         yield word + " "
         time.sleep(0.02)
 
+# --- CHATBOT ENGINE ---
 @st.cache_resource
 def inicializar_cadena(language_code):
     loader = PyPDFLoader("reglamento.pdf")
@@ -230,33 +223,11 @@ c1, c2 = st.columns([0.1, 0.9])
 with c1: st.image(LOGO_ICON_URL, width=70)
 with c2: st.title(t["title"])
 
-# --- AUTO-LOGIN ---
+# --- AUTO-LOGIN & RECOVERY CHECK ---
 if "authentication_status" not in st.session_state:
     st.session_state["authentication_status"] = None
 
 try:
-    # Check Recovery
-    query_params = st.query_params
-    if "access_token" in query_params and "type" in query_params and query_params["type"] == "recovery":
-        session = supabase.auth.set_session(query_params["access_token"], query_params.get("refresh_token", ""))
-        if session:
-            st.session_state["authentication_status"] = True
-            st.session_state["user_id"] = session.user.id
-            st.session_state["username"] = session.user.email
-            st.session_state["name"] = "Usuario"
-            st.warning(t["reset_title"])
-            with st.form("reset_final_form", enter_to_submit=False):
-                new_password = st.text_input(t["reset_pass_new"], type="password")
-                if st.form_submit_button(t["reset_btn_final"]):
-                    if len(new_password) >= 6:
-                        supabase.auth.update_user({"password": new_password})
-                        st.success(t["reset_success"])
-                        st.query_params.clear()
-                        time.sleep(2)
-                        st.rerun()
-                    else: st.error("Min 6 chars")
-            st.stop()
-
     # Check Session & Fix Profile
     session = supabase.auth.get_session()
     if session and not st.session_state["authentication_status"]:
@@ -275,7 +246,7 @@ try:
 except: pass
 
 # ==========================================
-# APP PRINCIPAL
+# APP PRINCIPAL (LOGUEADO)
 # ==========================================
 if st.session_state["authentication_status"] is True:
     user_name = st.session_state["name"]
@@ -285,7 +256,9 @@ if st.session_state["authentication_status"] is True:
     c1, c2 = st.columns([0.8, 0.2])
     c1.caption(f"{t['login_success']} {user_name}")
     if c2.button(t["logout_btn"], use_container_width=True):
-        supabase.auth.sign_out()
+        try:
+            supabase.auth.sign_out() 
+        except: pass
         st.session_state.clear()
         st.rerun()
 
@@ -299,12 +272,12 @@ if st.session_state["authentication_status"] is True:
                         try:
                             supabase.auth.update_user({"password": new_p})
                             st.success(t["pass_updated"])
-                        except Exception as e: st.error(str(e))
+                        except Exception as e: st.error(f"Error: {e}")
                     else: st.error("Min 6 chars")
 
     tab1, tab2, tab3 = st.tabs([t["tab1"], t["tab2"], t["tab3"]])
 
-    # --- CHAT ---
+    # --- TAB 1: CHAT ---
     with tab1:
         if st.button(t["chat_clear_btn"], use_container_width=True):
             supabase.table('chat_history').update({'is_visible': False}).eq('user_id', user_id).execute()
@@ -325,12 +298,12 @@ if st.session_state["authentication_status"] is True:
                     res = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': msg}).execute()
                     st.session_state.messages.append({"id": res.data[0]['id'], "role": "assistant", "content": msg})
                 except Exception as e:
-                    # Auto-reparación en chat si falla
+                    # Auto-reparación
                     try:
                         supabase.table('profiles').upsert({'id': user_id, 'email': user_email, 'full_name': user_name}).execute()
                         res = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': msg}).execute()
                         st.session_state.messages.append({"id": res.data[0]['id'], "role": "assistant", "content": msg})
-                    except: st.error("Error de base de datos. Intenta reloguear.")
+                    except: st.error("Error DB")
 
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
@@ -356,7 +329,6 @@ if st.session_state["authentication_status"] is True:
             st.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"): st.markdown(prompt)
             
-            # Chat con autoreparación
             try:
                 supabase.table('chat_history').insert({'user_id': user_id, 'role': 'user', 'message': prompt}).execute()
             except:
@@ -371,52 +343,38 @@ if st.session_state["authentication_status"] is True:
             r = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': resp}).execute()
             st.session_state.messages.append({"id": r.data[0]['id'], "role": "assistant", "content": resp})
 
-    # --- TAB 2: INSCRIPCION INTELIGENTE ---
+    # TAB 2: INSCRIPCION
     with tab2:
         st.header(t["enroll_title"])
         subs = supabase.table('subjects').select('*').order('name').execute().data
         if subs:
-            # Recuperar estados de filtro o usar default "Todas"
-            state_car = st.session_state.get("f_car", t["filter_all"])
-            state_sem = st.session_state.get("f_sem", t["filter_all_m"])
-
-            # Calcular listas VALIDAS cruzadas
-            # 1. Si hay carrera seleccionada, filtrar semestres disponibles para ELLA
-            if state_car != t["filter_all"]:
-                valid_sems = sorted(list(set([s['semester'] for s in subs if s['career'] == state_car])))
-            else:
-                valid_sems = sorted(list(set([s['semester'] for s in subs])))
-
-            # 2. Si hay semestre seleccionado, filtrar carreras disponibles para ESE semestre
-            if state_sem != t["filter_all_m"]:
-                try:
-                    sem_num = int(state_sem.split()[1])
-                    valid_cars = sorted(list(set([s['career'] for s in subs if s['semester'] == sem_num])))
-                except:
-                    valid_cars = sorted(list(set([s['career'] for s in subs])))
-            else:
-                valid_cars = sorted(list(set([s['career'] for s in subs])))
-
-            # Renderizar filtros
+            cars = sorted(list(set([s['career'] for s in subs])))
+            sems = sorted(list(set([s['semester'] for s in subs])))
             c1, c2, c3 = st.columns([2,2,1])
             
-            # Selectbox Carrera
-            # Aseguramos que la selección actual esté en la lista válida, si no, reset a "Todas"
-            opts_car = [t["filter_all"]] + valid_cars
-            idx_car = opts_car.index(state_car) if state_car in opts_car else 0
-            sel_car = c1.selectbox(t["filter_career"], opts_car, index=idx_car, key="f_car")
+            s_car = st.session_state.get("f_car", t["filter_all"])
+            s_sem = st.session_state.get("f_sem", t["filter_all_m"])
+            
+            if s_car != t["filter_all"]: v_sems = sorted(list(set([s['semester'] for s in subs if s['career'] == s_car])))
+            else: v_sems = sems
+            if s_sem != t["filter_all_m"]:
+                try: v_cars = sorted(list(set([s['career'] for s in subs if s['semester'] == int(s_sem.split()[1])])))
+                except: v_cars = cars
+            else: v_cars = cars
 
-            # Selectbox Semestre
-            opts_sem = [t["filter_all_m"]] + [f"Sem {x}" for x in valid_sems]
-            idx_sem = opts_sem.index(state_sem) if state_sem in opts_sem else 0
-            sel_sem = c2.selectbox(t["filter_sem"], opts_sem, index=idx_sem, key="f_sem")
-
-            if c3.button(t["reset_btn"]):
+            opts_c = [t["filter_all"]] + v_cars
+            idx_c = opts_c.index(s_car) if s_car in opts_c else 0
+            sel_car = c1.selectbox(t["filter_career"], opts_c, index=idx_c, key="f_car")
+            
+            opts_s = [t["filter_all_m"]] + [f"Sem {x}" for x in v_sems]
+            idx_s = opts_s.index(s_sem) if s_sem in opts_s else 0
+            sel_sem = c2.selectbox(t["filter_sem"], opts_s, index=idx_s, key="f_sem")
+            
+            if c3.button(t["reset_btn"]): 
                 del st.session_state["f_car"]
                 del st.session_state["f_sem"]
                 st.rerun()
 
-            # Filtrar Data Final
             filt = subs
             if sel_car != t["filter_all"]: filt = [s for s in filt if s['career'] == sel_car]
             if sel_sem != t["filter_all_m"]: filt = [s for s in filt if s['semester'] == int(sel_sem.split()[1])]
@@ -429,8 +387,7 @@ if st.session_state["authentication_status"] is True:
                 my_regs = [r['section_id'] for r in supabase.table('registrations').select('section_id').eq('user_id', user_id).execute().data]
                 my_sch = supabase.table('sections').select('*').in_('id', my_regs).execute().data
                 
-                if sub_map[target] in [s['subject_id'] for s in my_sch]:
-                    st.info(t["msg_already"])
+                if sub_map[target] in [s['subject_id'] for s in my_sch]: st.info(t["msg_already"])
                 else:
                     for sec in secs:
                         with st.container(border=True):
@@ -438,10 +395,7 @@ if st.session_state["authentication_status"] is True:
                             cap = sec['capacity'] - (cnt if cnt else 0)
                             cc1, cc2, cc3 = st.columns([3,2,2])
                             cc1.write(f"**{sec['section_code']}**")
-                            cc1.caption(sec['professor_name'])
-                            cc2.write(f"{sec['day_of_week']}")
-                            cc2.caption(f"{sec['start_time'][:5]} - {sec['end_time'][:5]}")
-                            
+                            cc2.write(f"{sec['day_of_week']} {sec['start_time'][:5]}-{sec['end_time'][:5]}")
                             if cap > 0:
                                 if cc3.button(f"{t['btn_enroll']} ({cap})", key=sec['id']):
                                     conflict = False
@@ -495,6 +449,9 @@ if st.session_state["authentication_status"] is True:
                 st.dataframe(clean_data, use_container_width=True)
             else: st.info("No data")
 
+# ==========================================
+# LOGIN MANUAL
+# ==========================================
 else:
     cL, cM, cR = st.columns([1, 2, 1])
     with cM:
@@ -509,14 +466,38 @@ else:
                 except Exception as e: 
                     st.error(f"Error de Login: {e}")
         
+        # --- RECUPERACIÓN POR CÓDIGO OTP ---
         with st.expander(t["forgot_header"]):
-            with st.form("rec", enter_to_submit=False):
-                rec_e = st.text_input(t["forgot_email"])
-                if st.form_submit_button(t["forgot_btn"]):
-                    try:
-                        supabase.auth.reset_password_for_email(rec_e, options={'redirect_to': 'https://chatbot-duoc1.streamlit.app'})
-                        st.success(t["forgot_success"])
-                    except: st.error("Error")
+            # Paso 1: Enviar
+            if "recovery_mode" not in st.session_state:
+                with st.form("send_otp_form", enter_to_submit=False):
+                    rec_e = st.text_input(t["forgot_email"])
+                    if st.form_submit_button(t["forgot_step1_btn"]):
+                        if rec_e:
+                            try:
+                                supabase.auth.sign_in_with_otp({"email": rec_e})
+                                st.session_state["recovery_mode"] = True
+                                st.session_state["recovery_email"] = rec_e
+                                st.rerun()
+                            except Exception as e: st.error(f"Error: {e}")
+                        else: st.warning("Ingresa un correo.")
+            
+            # Paso 2: Verificar
+            else:
+                st.info(t["forgot_step1_msg"])
+                with st.form("verify_otp_form", enter_to_submit=False):
+                    otp_code = st.text_input(t["forgot_step2_label"])
+                    if st.form_submit_button(t["forgot_step2_btn"]):
+                        try:
+                            res = supabase.auth.verify_otp({"email": st.session_state["recovery_email"], "token": otp_code, "type": "email"})
+                            if res.user:
+                                st.session_state["authentication_status"] = True
+                                st.session_state["user_id"] = res.user.id
+                                st.session_state["username"] = res.user.email
+                                st.success(t["forgot_success"])
+                                time.sleep(2)
+                                st.rerun()
+                        except: st.error(t["forgot_error_otp"])
 
     with st.sidebar:
         st.subheader(t["reg_header"])
@@ -531,5 +512,5 @@ else:
                         supabase.table('profiles').upsert({'id': res.user.id, 'email': re, 'full_name': rn}).execute()
                         st.success(t["reg_success"])
                     else:
-                        st.info("Revisa tu correo.")
+                        st.info("Check email")
                 except Exception as ex: st.error(str(ex))
