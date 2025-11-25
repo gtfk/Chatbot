@@ -1,4 +1,4 @@
-# Versión 25.0 (FINAL: Corrección APIError + Sync de Perfiles + Todo Integrado)
+# Versión 22.0 (FINAL: Lógica Limpia + Fix Iconos + CSS Separado)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -12,8 +12,10 @@ from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
 import os
 from supabase import create_client, Client
+import streamlit_authenticator as stauth
 import time
 from datetime import time as dt_time
+import bcrypt
 
 # --- URLs DE LOGOS ---
 LOGO_BANNER_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/a/aa/Logo_DuocUC.svg/2560px-Logo_DuocUC.svg.png"
@@ -33,8 +35,9 @@ def load_css(file_name):
         with open(file_name) as f:
             st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
     except FileNotFoundError:
-        st.error(f"⚠️ No se encontró el archivo {file_name}.")
+        st.error(f"⚠️ No se encontró el archivo {file_name}. Asegúrate de que esté en la misma carpeta que app.py.")
 
+# Cargar estilos visuales
 load_css("styles.css")
 
 # --- DICCIONARIO DE TRADUCCIONES ---
@@ -52,23 +55,19 @@ TEXTS = {
         "login_user": "Correo Institucional",
         "login_pass": "Contraseña",
         "login_btn": "Ingresar",
-        "login_failed": "❌ Credenciales inválidas o correo no confirmado.",
+        "login_failed": "❌ Credenciales inválidas",
         "login_welcome": "¡Bienvenido al Asistente!",
-        "forgot_header": "¿Olvidaste tu contraseña?",
-        "forgot_email": "Ingresa tu correo registrado",
-        "forgot_btn": "Recuperar Contraseña",
-        "forgot_success": "✅ Si el correo existe, te hemos enviado un enlace mágico.",
         "chat_clear_btn": "🧹 Limpiar Conversación",
         "chat_cleaning": "Procesando solicitud...",
         "chat_cleaned": "¡Historial limpiado!",
-        "chat_welcome": "¡Hola **{name}**! 👋 Soy tu asistente virtual de Duoc UC.",
-        "chat_welcome_clean": "¡Hola **{name}**! El historial ha sido archivado.",
+        "chat_welcome": "¡Hola **{name}**! 👋 Soy tu asistente virtual de Duoc UC. Pregúntame sobre el reglamento, asistencia o notas.",
+        "chat_welcome_clean": "¡Hola **{name}**! El historial ha sido archivado. ¿En qué más te ayudo?",
         "chat_placeholder": "Ej: ¿Con qué nota apruebo el ramo?",
         "chat_thinking": "Consultando reglamento...",
         "feedback_thanks": "¡Gracias por tu feedback! 👍",
         "feedback_report_sent": "Reporte enviado.",
         "feedback_modal_title": "¿Qué podemos mejorar?",
-        "feedback_modal_placeholder": "Ej: La respuesta no es precisa...",
+        "feedback_modal_placeholder": "Ej: La información sobre asistencia no es precisa...",
         "btn_send": "Enviar Comentario",
         "btn_cancel": "Omitir",
         "enroll_title": "Toma de Ramos 2025",
@@ -82,22 +81,22 @@ TEXTS = {
         "sec_title": "Secciones Disponibles para:",
         "btn_enroll": "Inscribir",
         "btn_full": "Sin Cupos",
-        "msg_enrolled": "✅ ¡Inscrito exitosamente!",
-        "msg_conflict": "⛔ Error: Tope de Horario",
-        "msg_already": "ℹ️ Ya estás inscrito.",
+        "msg_enrolled": "✅ ¡Asignatura inscrita exitosamente!",
+        "msg_conflict": "⛔ Error: Tope de Horario detectado",
+        "msg_already": "ℹ️ Ya estás inscrito en esta asignatura.",
         "my_schedule": "Tu Carga Académica",
         "no_schedule": "No tienes ramos inscritos.",
         "btn_drop": "Anular Ramo",
-        "msg_dropped": "Asignatura eliminada.",
+        "msg_dropped": "Asignatura eliminada de tu carga.",
         "admin_title": "Panel de Control (Admin)",
         "admin_pass_label": "Clave de Acceso:",
         "admin_success": "Acceso Autorizado",
-        "admin_info": "Registro de auditoría.",
+        "admin_info": "Registro de interacciones y feedback negativo.",
         "admin_update_btn": "🔄 Refrescar Datos",
-        "col_date": "Fecha",
+        "col_date": "Fecha/Hora",
         "col_status": "Estado",
-        "col_q": "Pregunta",
-        "col_a": "Respuesta",
+        "col_q": "Pregunta Estudiante",
+        "col_a": "Respuesta IA",
         "col_val": "Eval",
         "col_com": "Detalle",
         "reg_header": "Crear Cuenta Alumno",
@@ -105,9 +104,12 @@ TEXTS = {
         "reg_email": "Correo Duoc",
         "reg_pass": "Crear Contraseña",
         "reg_btn": "Registrarse",
-        "reg_success": "¡Cuenta creada! Ya puedes iniciar sesión.",
+        "reg_success": "¡Cuenta creada! Accede desde el Login.",
         "auth_error": "Verifica tus datos.",
-        "system_prompt": "INSTRUCCIÓN: Responde en Español formal pero cercano. ROL: Coordinador académico Duoc UC."
+        "system_prompt": """
+        INSTRUCCIÓN: Responde en Español formal pero cercano.
+        ROL: Eres un coordinador académico de Duoc UC.
+        """
     },
     "en": {
         "label": "English 🇺🇸",
@@ -122,28 +124,24 @@ TEXTS = {
         "login_user": "Institutional Email",
         "login_pass": "Password",
         "login_btn": "Login",
-        "login_failed": "❌ Invalid credentials or email not confirmed.",
+        "login_failed": "❌ Invalid credentials",
         "login_welcome": "Welcome to the Assistant!",
-        "forgot_header": "Forgot password?",
-        "forgot_email": "Enter registered email",
-        "forgot_btn": "Recover Password",
-        "forgot_success": "✅ If email exists, a magic link has been sent.",
         "chat_clear_btn": "🧹 Clear Conversation",
         "chat_cleaning": "Processing...",
         "chat_cleaned": "History cleared!",
-        "chat_welcome": "Hello **{name}**! 👋 I'm your Duoc UC virtual assistant.",
-        "chat_welcome_clean": "Hello **{name}**! History archived.",
+        "chat_welcome": "Hello **{name}**! 👋 I'm your Duoc UC virtual assistant. Ask me about regulations, attendance, or grades.",
+        "chat_welcome_clean": "Hello **{name}**! History archived. Can I help with anything else?",
         "chat_placeholder": "Ex: What is the passing grade?",
         "chat_thinking": "Consulting rulebook...",
-        "feedback_thanks": "Thanks! 👍",
+        "feedback_thanks": "Thanks for your feedback! 👍",
         "feedback_report_sent": "Report sent.",
         "feedback_modal_title": "What went wrong?",
-        "feedback_modal_placeholder": "Ex: Inaccurate info...",
+        "feedback_modal_placeholder": "Ex: The information is inaccurate...",
         "btn_send": "Send Comment",
         "btn_cancel": "Skip",
         "enroll_title": "Course Registration 2025",
-        "filter_career": "📂 Career:",
-        "filter_sem": "⏳ Semester:",
+        "filter_career": "📂 Filter by Career:",
+        "filter_sem": "⏳ Filter by Semester:",
         "filter_all": "All Careers",
         "filter_all_m": "All Semesters",
         "reset_btn": "🔄 Clear Filters",
@@ -152,32 +150,35 @@ TEXTS = {
         "sec_title": "Available Sections for:",
         "btn_enroll": "Enroll",
         "btn_full": "Full",
-        "msg_enrolled": "✅ Enrolled successfully!",
+        "msg_enrolled": "✅ Subject enrolled successfully!",
         "msg_conflict": "⛔ Error: Schedule Conflict",
-        "msg_already": "ℹ️ Already enrolled.",
+        "msg_already": "ℹ️ You are already enrolled.",
         "my_schedule": "Your Academic Load",
         "no_schedule": "No subjects enrolled.",
-        "btn_drop": "Drop",
-        "msg_dropped": "Subject removed.",
+        "btn_drop": "Drop Course",
+        "msg_dropped": "Subject removed from load.",
         "admin_title": "Control Panel (Admin)",
         "admin_pass_label": "Access Key:",
         "admin_success": "Access Granted",
-        "admin_info": "Audit log.",
-        "admin_update_btn": "🔄 Refresh",
-        "col_date": "Date",
+        "admin_info": "Log of interactions and negative feedback.",
+        "admin_update_btn": "🔄 Refresh Data",
+        "col_date": "Date/Time",
         "col_status": "Status",
-        "col_q": "Question",
-        "col_a": "Answer",
+        "col_q": "Student Question",
+        "col_a": "AI Answer",
         "col_val": "Rate",
         "col_com": "Detail",
-        "reg_header": "Create Account",
+        "reg_header": "Create Student Account",
         "reg_name": "Full Name",
         "reg_email": "Duoc Email",
         "reg_pass": "Create Password",
         "reg_btn": "Register",
-        "reg_success": "Account created! You can now login.",
-        "auth_error": "Check credentials.",
-        "system_prompt": "INSTRUCTION: Respond in English. ROLE: Academic coordinator Duoc UC."
+        "reg_success": "Account created! Please login.",
+        "auth_error": "Check your credentials.",
+        "system_prompt": """
+        INSTRUCTION: Respond in English, formal but friendly.
+        ROLE: You are an academic coordinator at Duoc UC.
+        """
     }
 }
 
@@ -238,6 +239,15 @@ def inicializar_cadena(language_code):
     retrieval_chain = create_retrieval_chain(retriever, document_chain)
     return retrieval_chain
 
+# --- FETCH USERS ---
+def fetch_all_users():
+    try:
+        response = supabase.table('profiles').select("email, full_name, password_hash").execute()
+        if not response.data: return {}
+        users_dict = {u['email']: u for u in response.data}
+        return users_dict
+    except: return {}
+
 # --- SIDEBAR ---
 with st.sidebar:
     st.markdown(f"""
@@ -261,19 +271,22 @@ if "authentication_status" not in st.session_state:
     st.session_state["authentication_status"] = None
 
 # ==========================================
-# APP PRINCIPAL (LOGUEADO)
+# APP PRINCIPAL
 # ==========================================
 if st.session_state["authentication_status"] is True:
     user_name = st.session_state["name"]
     user_email = st.session_state["username"]
-    user_id = st.session_state["user_id"]
+    
+    if 'user_id' not in st.session_state:
+        user_id_response = supabase.table('profiles').select('id').eq('email', user_email).execute()
+        if user_id_response.data: st.session_state.user_id = user_id_response.data[0]['id']
+        else: st.stop()
+    user_id = st.session_state.user_id
 
     c1, c2 = st.columns([0.8, 0.2])
     c1.caption(f"{t['login_success']} {user_name} ({user_email})")
     if c2.button(t["logout_btn"], use_container_width=True):
-        try:
-            supabase.auth.sign_out() 
-        except: pass
+        st.session_state["authentication_status"] = None
         st.session_state.clear()
         st.rerun()
 
@@ -307,13 +320,9 @@ if st.session_state["authentication_status"] is True:
                 st.session_state.messages.append({"id": row['id'], "role": row['role'], "content": row['message']})
             if not st.session_state.messages:
                 welcome_msg = t["chat_welcome"].format(name=user_name)
-                # Intento seguro de insertar bienvenida
-                try:
-                    res = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': welcome_msg}).execute()
-                    if res.data:
-                        st.session_state.messages.append({"id": res.data[0]['id'], "role": "assistant", "content": welcome_msg})
-                except Exception as e:
-                    st.error(f"Error al inicializar chat. Verifica que tu usuario tenga perfil. Error: {e}")
+                res = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': welcome_msg}).execute()
+                if res.data:
+                    st.session_state.messages.append({"id": res.data[0]['id'], "role": "assistant", "content": welcome_msg})
 
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
@@ -489,42 +498,18 @@ else:
             input_pass = st.text_input(t["login_pass"], type="password")
             submit = st.form_submit_button(t["login_btn"], use_container_width=True)
             if submit:
-                try:
-                    # LOGIN NATIVO
-                    res = supabase.auth.sign_in_with_password({"email": input_email, "password": input_pass})
-                    
-                    # GUARDAR SESIÓN
-                    st.session_state["authentication_status"] = True
-                    st.session_state["user_id"] = res.user.id
-                    st.session_state["username"] = input_email
-                    # Recuperar nombre del profile
-                    try:
-                        prof = supabase.table('profiles').select('full_name').eq('id', res.user.id).execute()
-                        if prof.data:
-                            st.session_state["name"] = prof.data[0]['full_name']
-                        else:
-                            st.session_state["name"] = "Estudiante"
-                    except:
-                        st.session_state["name"] = "Estudiante"
-                    
-                    st.toast(t["login_welcome"])
-                    time.sleep(0.5)
-                    st.rerun()
-                except Exception as e:
-                    st.error(t["login_failed"])
-        
-        # Recuperar Contraseña
-        st.write("") 
-        with st.expander(t["forgot_header"]):
-            with st.form("forgot_form", enter_to_submit=False):
-                email_rec = st.text_input(t["forgot_email"])
-                if st.form_submit_button(t["forgot_btn"]):
-                    if email_rec:
-                        try:
-                            supabase.auth.reset_password_for_email(email_rec, options={'redirect_to': 'https://chatbot-duoc1.streamlit.app'})
-                            st.success(t["forgot_success"])
-                        except Exception as e: st.error(f"Error: {e}")
-                    else: st.warning("Ingresa un correo.")
+                all_users = fetch_all_users()
+                if input_email in all_users:
+                    stored_hash = all_users[input_email]['password_hash']
+                    if bcrypt.checkpw(input_pass.encode('utf-8'), stored_hash.encode('utf-8')):
+                        st.session_state["authentication_status"] = True
+                        st.session_state["name"] = all_users[input_email]['full_name']
+                        st.session_state["username"] = input_email
+                        st.toast(t["login_welcome"])
+                        time.sleep(0.5)
+                        st.rerun()
+                    else: st.error(t["login_failed"])
+                else: st.error(t["login_failed"])
 
     with st.sidebar:
         st.subheader(t["reg_header"])
@@ -533,22 +518,9 @@ else:
             e = st.text_input(t["reg_email"])
             p = st.text_input(t["reg_pass"], type="password")
             if st.form_submit_button(t["reg_btn"]):
+                hashed_bytes = bcrypt.hashpw(p.encode('utf-8'), bcrypt.gensalt())
+                hashed_str = hashed_bytes.decode('utf-8')
                 try:
-                    # 1. REGISTRO EN AUTH
-                    res = supabase.auth.sign_up({
-                        "email": e, 
-                        "password": p,
-                        "options": { "data": { "full_name": n } }
-                    })
-                    # 2. INSERTAR EN PROFILES USANDO EL ID DE AUTH (CRÍTICO PARA EVITAR APIError)
-                    if res.user:
-                        supabase.table('profiles').insert({
-                            'id': res.user.id,  # <-- ESTA ES LA CLAVE DEL ARREGLO
-                            'email': e,
-                            'full_name': n
-                        }).execute()
-                        st.success(t["reg_success"])
-                    else:
-                        st.info("Revisa tu correo para confirmar.")
-                except Exception as err: 
-                    st.error(f"Error: {err}")
+                    supabase.table('profiles').insert({'full_name': n, 'email': e, 'password_hash': hashed_str}).execute()
+                    st.success(t["reg_success"])
+                except: st.error("Error")
