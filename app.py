@@ -1,4 +1,4 @@
-# Versión 22.0 (FINAL: Lógica Limpia + Fix Iconos + CSS Separado)
+# Versión 22.1 (FINAL: Lógica Limpia + Fix Iconos + CSS Separado + Filtros Dinámicos)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -23,7 +23,7 @@ LOGO_ICON_URL = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSlve2kMlU
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(
-    page_title="Chatbot Duoc UC", 
+    page_title="Chatbot Duoc UC",
     page_icon=LOGO_ICON_URL,
     layout="wide",
     initial_sidebar_state="expanded"
@@ -342,10 +342,10 @@ if st.session_state["authentication_status"] is True:
                             if c_sub1.form_submit_button(t["btn_send"]):
                                 supabase.table('feedback').insert({"message_id": msg['id'], "user_id": user_id, "rating": "bad", "comment": comment_text}).execute()
                                 st.toast(t["feedback_report_sent"])
-                                st.session_state[reason_key] = False 
+                                st.session_state[reason_key] = False
                                 st.rerun()
                             if c_sub2.form_submit_button(t["btn_cancel"]):
-                                st.session_state[reason_key] = False 
+                                st.session_state[reason_key] = False
                                 st.rerun()
 
         if prompt := st.chat_input(t["chat_placeholder"]):
@@ -363,6 +363,7 @@ if st.session_state["authentication_status"] is True:
     # --- TAB 2: INSCRIPCIÓN ---
     with tab2:
         st.header(t["enroll_title"])
+        
         @st.cache_data(ttl=60)
         def get_user_schedule(uid):
             regs = supabase.table('registrations').select('section_id').eq('user_id', uid).execute().data
@@ -382,32 +383,73 @@ if st.session_state["authentication_status"] is True:
             return supabase.table('subjects').select('id, name, career, semester').order('name').execute().data
 
         subjects_data = get_all_subjects()
-        if not subjects_data: st.warning("No data.")
+
+        if not subjects_data: 
+            st.warning("No data.")
         else:
-            cur_career = st.session_state.get("filter_career", t["filter_all"])
-            cur_sem = st.session_state.get("filter_semester", t["filter_all_m"])
+            # 1. Inicializar variables de estado
+            if "selected_career" not in st.session_state:
+                st.session_state.selected_career = t["filter_all"]
+            if "selected_semester" not in st.session_state:
+                st.session_state.selected_semester = t["filter_all_m"]
+
+            # 2. Lógica de Filtrado Cruzado
+            
+            # Opciones de CARRERA basadas en SEMESTRE
+            temp_data_car = subjects_data
+            if st.session_state.selected_semester != t["filter_all_m"]:
+                try:
+                    sem_num_filter = int(st.session_state.selected_semester.split(" ")[1])
+                    temp_data_car = [s for s in subjects_data if s['semester'] == sem_num_filter]
+                except: pass
+            
+            avail_careers = sorted(list(set([s['career'] for s in temp_data_car if s['career']])))
+            career_opts = [t["filter_all"]] + avail_careers
+
+            # Opciones de SEMESTRE basadas en CARRERA
+            temp_data_sem = subjects_data
+            if st.session_state.selected_career != t["filter_all"]:
+                temp_data_sem = [s for s in subjects_data if s['career'] == st.session_state.selected_career]
+            
+            avail_sems = sorted(list(set([s['semester'] for s in temp_data_sem if s['semester']])))
+            semester_opts = [t["filter_all_m"]] + [f"Semestre {s}" for s in avail_sems]
+
+            # Verificar consistencia
+            if st.session_state.selected_career not in career_opts:
+                st.session_state.selected_career = t["filter_all"]
+            if st.session_state.selected_semester not in semester_opts:
+                st.session_state.selected_semester = t["filter_all_m"]
+
+            # 3. Renderizar Selectbox con Keys
             c_f1, c_f2, c_res = st.columns([2, 2, 1])
-            careers_list = sorted(list(set([s['career'] for s in subjects_data if s['career']])))
-            c_opts = [t["filter_all"]] + careers_list
-            sem_list = sorted(list(set([s['semester'] for s in subjects_data if s['semester']])))
-            s_opts = [t["filter_all_m"]] + [f"Semestre {s}" for s in sem_list]
-            with c_f1: sel_car = st.selectbox(t["filter_career"], c_opts)
-            with c_f2: sel_sem = st.selectbox(t["filter_sem"], s_opts)
+            with c_f1:
+                st.selectbox(t["filter_career"], career_opts, key="selected_career")
+            with c_f2:
+                st.selectbox(t["filter_sem"], semester_opts, key="selected_semester")
             with c_res:
                 st.write("")
-                st.write("") 
-                if st.button(t["reset_btn"]): st.rerun()
+                st.write("")
+                if st.button(t["reset_btn"]):
+                    st.session_state.selected_career = t["filter_all"]
+                    st.session_state.selected_semester = t["filter_all_m"]
+                    st.rerun()
+
+            # 4. Filtrar Data Final para Búsqueda
             filtered = subjects_data
-            if sel_car != t["filter_all"]: filtered = [s for s in filtered if s['career'] == sel_car]
-            if sel_sem != t["filter_all_m"]:
+            if st.session_state.selected_career != t["filter_all"]:
+                filtered = [s for s in filtered if s['career'] == st.session_state.selected_career]
+            if st.session_state.selected_semester != t["filter_all_m"]:
                 try:
-                    num = int(sel_sem.split(" ")[1])
-                    filtered = [s for s in filtered if s['semester'] == num]
+                    sem_num = int(st.session_state.selected_semester.split(" ")[1])
+                    filtered = [s for s in filtered if s['semester'] == sem_num]
                 except: pass
+
             s_dict = {s['name']: s['id'] for s in filtered}
             st.markdown(f"##### {t['search_label']}")
             sel_name = st.selectbox("Search", s_dict.keys(), index=None, placeholder=t["search_placeholder"], label_visibility="collapsed")
+            
             st.divider()
+
             if sel_name:
                 sid = s_dict[sel_name]
                 secs = supabase.table('sections').select('*').eq('subject_id', sid).execute().data
@@ -434,6 +476,7 @@ if st.session_state["authentication_status"] is True:
                                             st.cache_data.clear()
                                             st.rerun()
                                 else: c4.button(t["btn_full"], disabled=True, key=sec['id'])
+        
         st.subheader(t["my_schedule"])
         sch, _ = get_user_schedule(user_id)
         if not sch: st.info(t["no_schedule"])
