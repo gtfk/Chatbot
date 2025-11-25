@@ -1,4 +1,4 @@
-# Versión 31.0 (FINAL: Flujo OTP Numérico + CSS Externo + Todo Integrado)
+# Versión 32.0 (FINAL: Fix Rerun Exception + OTP Robusto + Todo Integrado)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -53,17 +53,14 @@ TEXTS = {
         "login_btn": "Ingresar",
         "login_failed": "❌ Credenciales inválidas.",
         "login_welcome": "¡Bienvenido al Asistente!",
-        
-        # OTP
         "forgot_header": "¿Olvidaste tu contraseña?",
         "forgot_email": "Ingresa tu correo registrado",
         "forgot_step1_btn": "Enviar Código de Acceso",
-        "forgot_step1_msg": "📩 Hemos enviado un código de 6 dígitos a tu correo. Revisa tu bandeja de entrada (y spam).",
-        "forgot_step2_label": "Ingresa el Código (Ej: 123456)",
+        "forgot_step1_msg": "Te enviaremos un código de 6 dígitos a tu correo.",
+        "forgot_step2_label": "Ingresa el Código (OTP)",
         "forgot_step2_btn": "Verificar y Entrar",
-        "forgot_success": "✅ Código verificado. Ve al menú lateral para cambiar tu contraseña definitiva.",
-        "forgot_error_otp": "❌ Código incorrecto o expirado.",
-        
+        "forgot_success": "✅ Código verificado. Ahora cambia tu contraseña en el menú lateral.",
+        "forgot_error_otp": "❌ Código inválido o expirado.",
         "change_pass_header": "Cambiar Contraseña",
         "new_pass": "Nueva Contraseña",
         "change_pass_btn": "Actualizar Clave",
@@ -101,7 +98,7 @@ TEXTS = {
         "reg_success": "¡Cuenta creada!",
         "chat_placeholder": "Escribe tu duda...",
         "chat_thinking": "Pensando...",
-        "system_prompt": "INSTRUCCIÓN: Responde en Español formal. ROL: Coordinador Duoc UC."
+        "system_prompt": "INSTRUCCIÓN: Responde en Español formal pero cercano. ROL: Coordinador Duoc UC."
     },
     "en": {
         "label": "English 🇺🇸",
@@ -117,17 +114,14 @@ TEXTS = {
         "login_btn": "Login",
         "login_failed": "❌ Invalid credentials.",
         "login_welcome": "Welcome!",
-        
-        # OTP
         "forgot_header": "Forgot password?",
         "forgot_email": "Enter registered email",
         "forgot_step1_btn": "Send Access Code",
-        "forgot_step1_msg": "📩 We sent a 6-digit code to your email.",
-        "forgot_step2_label": "Enter Code (Ex: 123456)",
+        "forgot_step1_msg": "We will send a 6-digit code to your email.",
+        "forgot_step2_label": "Enter Code (OTP)",
         "forgot_step2_btn": "Verify & Login",
-        "forgot_success": "✅ Verified. Change password in sidebar.",
+        "forgot_success": "✅ Code verified. Please change password in sidebar.",
         "forgot_error_otp": "❌ Invalid code.",
-
         "change_pass_header": "Change Password",
         "new_pass": "New Password",
         "change_pass_btn": "Update Password",
@@ -186,13 +180,11 @@ def init_supabase_client():
 
 supabase = init_supabase_client()
 
-# --- STREAMING ---
 def stream_data(text):
     for word in text.split(" "):
         yield word + " "
         time.sleep(0.02)
 
-# --- CHATBOT ENGINE ---
 @st.cache_resource
 def inicializar_cadena(language_code):
     loader = PyPDFLoader("reglamento.pdf")
@@ -205,7 +197,6 @@ def inicializar_cadena(language_code):
     bm25_retriever.k = 7
     retriever = EnsembleRetriever(retrievers=[bm25_retriever, vector_retriever], weights=[0.7, 0.3])
     llm = ChatGroq(api_key=GROQ_API_KEY, model="llama-3.1-8b-instant", temperature=0.1)
-    
     prompt_template = TEXTS[language_code]["system_prompt"] + """
     CONTEXT: {context}
     QUESTION: {input}
@@ -264,7 +255,6 @@ if st.session_state["authentication_status"] is True:
         st.session_state.clear()
         st.rerun()
 
-    # BARRA LATERAL: CAMBIAR CLAVE (Disponible tras OTP)
     with st.sidebar:
         st.markdown("---")
         with st.expander(t["change_pass_header"]):
@@ -352,30 +342,11 @@ if st.session_state["authentication_status"] is True:
         if subs:
             cars = sorted(list(set([s['career'] for s in subs])))
             sems = sorted(list(set([s['semester'] for s in subs])))
+            
             c1, c2, c3 = st.columns([2,2,1])
-            
-            s_car = st.session_state.get("f_car", t["filter_all"])
-            s_sem = st.session_state.get("f_sem", t["filter_all_m"])
-            
-            if s_car != t["filter_all"]: v_sems = sorted(list(set([s['semester'] for s in subs if s['career'] == s_car])))
-            else: v_sems = sems
-            if s_sem != t["filter_all_m"]:
-                try: v_cars = sorted(list(set([s['career'] for s in subs if s['semester'] == int(s_sem.split()[1])])))
-                except: v_cars = cars
-            else: v_cars = cars
-
-            opts_c = [t["filter_all"]] + v_cars
-            idx_c = opts_c.index(s_car) if s_car in opts_c else 0
-            sel_car = c1.selectbox(t["filter_career"], opts_c, index=idx_c, key="f_car")
-            
-            opts_s = [t["filter_all_m"]] + [f"Sem {x}" for x in v_sems]
-            idx_s = opts_s.index(s_sem) if s_sem in opts_s else 0
-            sel_sem = c2.selectbox(t["filter_sem"], opts_s, index=idx_s, key="f_sem")
-            
-            if c3.button(t["reset_btn"]): 
-                del st.session_state["f_car"]
-                del st.session_state["f_sem"]
-                st.rerun()
+            sel_car = c1.selectbox(t["filter_career"], [t["filter_all"]] + cars)
+            sel_sem = c2.selectbox(t["filter_sem"], [t["filter_all_m"]] + [f"Sem {x}" for x in sems])
+            if c3.button(t["reset_btn"]): st.rerun()
 
             filt = subs
             if sel_car != t["filter_all"]: filt = [s for s in filt if s['career'] == sel_car]
@@ -454,9 +425,6 @@ if st.session_state["authentication_status"] is True:
                 st.dataframe(clean_data, use_container_width=True)
             else: st.info("No data")
 
-# ==========================================
-# PANTALLA DE LOGIN (NO LOGUEADO)
-# ==========================================
 else:
     cL, cM, cR = st.columns([1, 2, 1])
     with cM:
@@ -471,18 +439,14 @@ else:
                 except Exception as e: 
                     st.error(f"Error de Login: {e}")
         
-        # --- RECUPERACIÓN OTP (MODO PASO A PASO) ---
+        # --- RECUPERACIÓN OTP ---
         with st.expander(t["forgot_header"]):
-            
-            # Estado de recuperación (si se envió el código)
             if "recovery_mode" not in st.session_state:
-                # PASO 1: Ingresar correo
                 with st.form("send_otp_form", enter_to_submit=False):
                     rec_e = st.text_input(t["forgot_email"])
                     if st.form_submit_button(t["forgot_step1_btn"]):
                         if rec_e:
                             try:
-                                # Envía código de 6 dígitos (OTP)
                                 supabase.auth.sign_in_with_otp({"email": rec_e})
                                 st.session_state["recovery_mode"] = True
                                 st.session_state["recovery_email"] = rec_e
@@ -490,13 +454,12 @@ else:
                             except Exception as e: st.error(f"Error: {e}")
                         else: st.warning("Ingresa un correo.")
             else:
-                # PASO 2: Ingresar código recibido
                 st.info(t["forgot_step1_msg"])
                 with st.form("verify_otp_form", enter_to_submit=False):
                     otp_code = st.text_input(t["forgot_step2_label"])
                     if st.form_submit_button(t["forgot_step2_btn"]):
                         try:
-                            # Verifica código y loguea
+                            # === CORRECCIÓN CLAVE: except Exception as e para atrapar error y dejar pasar rerun ===
                             res = supabase.auth.verify_otp({"email": st.session_state["recovery_email"], "token": otp_code, "type": "email"})
                             if res.user:
                                 st.session_state["authentication_status"] = True
@@ -505,7 +468,10 @@ else:
                                 st.success(t["forgot_success"])
                                 time.sleep(2)
                                 st.rerun()
-                        except: st.error(t["forgot_error_otp"])
+                        except Exception as e: 
+                             # Filtramos la excepción de rerun para no mostrar error si fue éxito
+                             if "RerunData" not in str(type(e)):
+                                 st.error(f"{t['forgot_error_otp']}")
 
     with st.sidebar:
         st.subheader(t["reg_header"])
@@ -517,7 +483,7 @@ else:
                 try:
                     res = supabase.auth.sign_up({"email": re, "password": rp, "options": {"data": {"full_name": rn}}})
                     if res.user:
-                        supabase.table('profiles').insert({'id': res.user.id, 'email': re, 'full_name': rn}).execute()
+                        supabase.table('profiles').upsert({'id': res.user.id, 'email': re, 'full_name': rn}).execute()
                         st.success(t["reg_success"])
                     else:
                         st.info("Check email")
