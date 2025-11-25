@@ -1,4 +1,4 @@
-# Versión 22.1 (FINAL: Lógica Limpia + Fix Iconos + CSS Separado + Filtros Dinámicos)
+# Versión 22.2 (FINAL: Lógica Limpia + Fix Iconos + CSS Separado + Filtros Fix Callback)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -426,13 +426,17 @@ if st.session_state["authentication_status"] is True:
                 st.selectbox(t["filter_career"], career_opts, key="selected_career")
             with c_f2:
                 st.selectbox(t["filter_sem"], semester_opts, key="selected_semester")
+            
+            # --- FIX: FUNCIÓN CALLBACK PARA EL BOTÓN ---
+            def clear_filters_callback():
+                st.session_state.selected_career = t["filter_all"]
+                st.session_state.selected_semester = t["filter_all_m"]
+
             with c_res:
                 st.write("")
                 st.write("")
-                if st.button(t["reset_btn"]):
-                    st.session_state.selected_career = t["filter_all"]
-                    st.session_state.selected_semester = t["filter_all_m"]
-                    st.rerun()
+                # Usamos on_click para ejecutar la limpieza ANTES de recargar
+                st.button(t["reset_btn"], on_click=clear_filters_callback)
 
             # 4. Filtrar Data Final para Búsqueda
             filtered = subjects_data
