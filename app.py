@@ -1,4 +1,4 @@
-# Versión 22.2 (FINAL: Lógica Limpia + Fix Iconos + CSS Separado + Filtros Fix Callback)
+# Versión 23.0 (FINAL: Admin KPIs + Filtros Negativos + Base Estable v22.2)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -427,7 +427,7 @@ if st.session_state["authentication_status"] is True:
             with c_f2:
                 st.selectbox(t["filter_sem"], semester_opts, key="selected_semester")
             
-            # --- FIX: FUNCIÓN CALLBACK PARA EL BOTÓN ---
+            # --- CALLBACK CORREGIDO PARA BOTÓN ---
             def clear_filters_callback():
                 st.session_state.selected_career = t["filter_all"]
                 st.session_state.selected_semester = t["filter_all_m"]
@@ -435,7 +435,6 @@ if st.session_state["authentication_status"] is True:
             with c_res:
                 st.write("")
                 st.write("")
-                # Usamos on_click para ejecutar la limpieza ANTES de recargar
                 st.button(t["reset_btn"], on_click=clear_filters_callback)
 
             # 4. Filtrar Data Final para Búsqueda
@@ -497,28 +496,62 @@ if st.session_state["authentication_status"] is True:
                         st.cache_data.clear()
                         st.rerun()
 
-    # --- TAB 3: ADMIN ---
+    # --- TAB 3: ADMIN (CON MEJORAS) ---
     with tab3:
         st.header(t["admin_title"])
         admin_pass = st.text_input(t["admin_pass_label"], type="password")
+        
         if admin_pass == ADMIN_PASSWORD:
             st.success(t["admin_success"])
-            st.info(t["admin_info"])
-            if st.button(t["admin_update_btn"]): st.rerun()
+            if st.button(t["admin_update_btn"], key="refresh_top"): st.rerun()
+            
             try:
+                # Cargar datos para Dashboard
                 response = supabase.table('chat_history').select('created_at, role, message, is_visible, user_id, feedback(rating, comment)').not_.is_('feedback', 'null').order('created_at', desc=True).execute()
-                if not response.data: st.warning("No Data.")
+                users_count = supabase.table('profiles').select('id', count='exact', head=True).execute().count
+
+                if not response.data: 
+                    st.warning("Aún no hay interacciones con feedback.")
                 else:
+                    # Cálculo de KPIs
+                    total_feedback = len(response.data)
+                    total_good = sum(1 for x in response.data if x['feedback'] and x['feedback'][0]['rating'] == 'good')
+                    total_bad = sum(1 for x in response.data if x['feedback'] and x['feedback'][0]['rating'] == 'bad')
+                    satisfaction_rate = (total_good / total_feedback * 100) if total_feedback > 0 else 0
+
+                    st.markdown("### 📊 Métricas Generales")
+                    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+                    kpi1.metric("👥 Usuarios Totales", users_count)
+                    kpi2.metric("💬 Feedbacks Recibidos", total_feedback)
+                    kpi3.metric("👍 Tasa Satisfacción", f"{satisfaction_rate:.1f}%")
+                    kpi4.metric("🚨 Reportes Negativos", total_bad, delta_color="inverse")
+                    
+                    st.divider()
+
+                    # Filtros de visualización
+                    c_filter, _ = st.columns([0.4, 0.6])
+                    show_only_bad = c_filter.toggle("🔥 Mostrar solo Feedback Negativo (Errores)", value=False)
+
                     data_tbl = []
+                    st.write("Cargando detalles...")
                     pbar = st.progress(0)
+                    
                     for i, item in enumerate(response.data):
                         fb = item['feedback'][0] if item['feedback'] else {'rating': 'N/A', 'comment': ''}
+                        
+                        # Lógica del Filtro
+                        if show_only_bad and fb['rating'] != 'bad':
+                            pbar.progress((i+1)/len(response.data))
+                            continue
+
                         icon = "✅" if fb['rating'] == "good" else "❌"
                         status = "Activo" if item['is_visible'] else "Archivado"
+                        
                         try:
                             q = supabase.table('chat_history').select('message').eq('user_id', item['user_id']).eq('role', 'user').lt('created_at', item['created_at']).order('created_at', desc=True).limit(1).execute()
                             q_text = q.data[0]['message'] if q.data else "N/A"
-                        except: q_text = "Error"
+                        except: q_text = "Error al buscar contexto"
+                        
                         data_tbl.append({
                             t["col_date"]: item['created_at'][:16].replace("T", " "),
                             t["col_status"]: status,
@@ -529,8 +562,11 @@ if st.session_state["authentication_status"] is True:
                         })
                         pbar.progress((i+1)/len(response.data))
                     pbar.empty()
+                    
+                    st.markdown(f"### 📝 Registro Detallado ({len(data_tbl)} filas)")
                     st.dataframe(data_tbl, use_container_width=True)
-            except Exception as e: st.error(str(e))
+
+            except Exception as e: st.error(f"Error cargando datos: {str(e)}")
         elif admin_pass: st.error(t["auth_error"])
 
 # ==========================================
