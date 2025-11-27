@@ -1,4 +1,4 @@
-# Versión 23.0 (FINAL: Admin KPIs + Filtros Negativos + Base Estable v22.2)
+# Versión 24.0 (FINAL: Chips Chat + Export Excel + Base Estable v23)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -16,6 +16,7 @@ import streamlit_authenticator as stauth
 import time
 from datetime import time as dt_time
 import bcrypt
+import pandas as pd  # <--- NUEVO: Para exportar a Excel
 
 # --- URLs DE LOGOS ---
 LOGO_BANNER_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/a/aa/Logo_DuocUC.svg/2560px-Logo_DuocUC.svg.png"
@@ -348,6 +349,21 @@ if st.session_state["authentication_status"] is True:
                                 st.session_state[reason_key] = False
                                 st.rerun()
 
+        # --- 1. NUEVO: CHIPS DE SUGERENCIAS (TAB 1) ---
+        if not st.session_state.messages or (len(st.session_state.messages) == 1 and st.session_state.messages[0]['role'] == 'assistant'):
+            # Solo mostrar si el chat está "vacío" (solo mensaje de bienvenida)
+            st.markdown("💡 **¿No sabes qué preguntar? Prueba con esto:**")
+            col_sug1, col_sug2, col_sug3 = st.columns(3)
+            sugerencia = None
+            if col_sug1.button("📋 Justificar Inasistencia"): sugerencia = "¿Cómo justifico una inasistencia?"
+            if col_sug2.button("🎓 Requisitos Titulación"): sugerencia = "¿Cuáles son los requisitos para titularme?"
+            if col_sug3.button("📅 Fechas Exámenes"): sugerencia = "¿Cuándo son los exámenes transversales?"
+            
+            if sugerencia:
+                st.session_state.messages.append({"role": "user", "content": sugerencia})
+                supabase.table('chat_history').insert({'user_id': user_id, 'role': 'user', 'message': sugerencia}).execute()
+                st.rerun()
+
         if prompt := st.chat_input(t["chat_placeholder"]):
             st.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"): st.markdown(prompt)
@@ -394,8 +410,6 @@ if st.session_state["authentication_status"] is True:
                 st.session_state.selected_semester = t["filter_all_m"]
 
             # 2. Lógica de Filtrado Cruzado
-            
-            # Opciones de CARRERA basadas en SEMESTRE
             temp_data_car = subjects_data
             if st.session_state.selected_semester != t["filter_all_m"]:
                 try:
@@ -406,7 +420,6 @@ if st.session_state["authentication_status"] is True:
             avail_careers = sorted(list(set([s['career'] for s in temp_data_car if s['career']])))
             career_opts = [t["filter_all"]] + avail_careers
 
-            # Opciones de SEMESTRE basadas en CARRERA
             temp_data_sem = subjects_data
             if st.session_state.selected_career != t["filter_all"]:
                 temp_data_sem = [s for s in subjects_data if s['career'] == st.session_state.selected_career]
@@ -414,7 +427,6 @@ if st.session_state["authentication_status"] is True:
             avail_sems = sorted(list(set([s['semester'] for s in temp_data_sem if s['semester']])))
             semester_opts = [t["filter_all_m"]] + [f"Semestre {s}" for s in avail_sems]
 
-            # Verificar consistencia
             if st.session_state.selected_career not in career_opts:
                 st.session_state.selected_career = t["filter_all"]
             if st.session_state.selected_semester not in semester_opts:
@@ -427,7 +439,6 @@ if st.session_state["authentication_status"] is True:
             with c_f2:
                 st.selectbox(t["filter_sem"], semester_opts, key="selected_semester")
             
-            # --- CALLBACK CORREGIDO PARA BOTÓN ---
             def clear_filters_callback():
                 st.session_state.selected_career = t["filter_all"]
                 st.session_state.selected_semester = t["filter_all_m"]
@@ -437,7 +448,6 @@ if st.session_state["authentication_status"] is True:
                 st.write("")
                 st.button(t["reset_btn"], on_click=clear_filters_callback)
 
-            # 4. Filtrar Data Final para Búsqueda
             filtered = subjects_data
             if st.session_state.selected_career != t["filter_all"]:
                 filtered = [s for s in filtered if s['career'] == st.session_state.selected_career]
@@ -496,7 +506,7 @@ if st.session_state["authentication_status"] is True:
                         st.cache_data.clear()
                         st.rerun()
 
-    # --- TAB 3: ADMIN (CON MEJORAS) ---
+    # --- TAB 3: ADMIN ---
     with tab3:
         st.header(t["admin_title"])
         admin_pass = st.text_input(t["admin_pass_label"], type="password")
@@ -506,14 +516,13 @@ if st.session_state["authentication_status"] is True:
             if st.button(t["admin_update_btn"], key="refresh_top"): st.rerun()
             
             try:
-                # Cargar datos para Dashboard
                 response = supabase.table('chat_history').select('created_at, role, message, is_visible, user_id, feedback(rating, comment)').not_.is_('feedback', 'null').order('created_at', desc=True).execute()
                 users_count = supabase.table('profiles').select('id', count='exact', head=True).execute().count
 
                 if not response.data: 
                     st.warning("Aún no hay interacciones con feedback.")
                 else:
-                    # Cálculo de KPIs
+                    # Métricas
                     total_feedback = len(response.data)
                     total_good = sum(1 for x in response.data if x['feedback'] and x['feedback'][0]['rating'] == 'good')
                     total_bad = sum(1 for x in response.data if x['feedback'] and x['feedback'][0]['rating'] == 'bad')
@@ -528,7 +537,6 @@ if st.session_state["authentication_status"] is True:
                     
                     st.divider()
 
-                    # Filtros de visualización
                     c_filter, _ = st.columns([0.4, 0.6])
                     show_only_bad = c_filter.toggle("🔥 Mostrar solo Feedback Negativo (Errores)", value=False)
 
@@ -539,7 +547,6 @@ if st.session_state["authentication_status"] is True:
                     for i, item in enumerate(response.data):
                         fb = item['feedback'][0] if item['feedback'] else {'rating': 'N/A', 'comment': ''}
                         
-                        # Lógica del Filtro
                         if show_only_bad and fb['rating'] != 'bad':
                             pbar.progress((i+1)/len(response.data))
                             continue
@@ -563,8 +570,24 @@ if st.session_state["authentication_status"] is True:
                         pbar.progress((i+1)/len(response.data))
                     pbar.empty()
                     
+                    # --- 2. NUEVO: EXPORTAR A EXCEL (TAB 3) ---
                     st.markdown(f"### 📝 Registro Detallado ({len(data_tbl)} filas)")
-                    st.dataframe(data_tbl, use_container_width=True)
+                    
+                    # Convertir a DataFrame y botón de descarga
+                    if data_tbl:
+                        df_download = pd.DataFrame(data_tbl)
+                        csv = df_download.to_csv(index=False).encode('utf-8-sig') # utf-8-sig para que Excel lea tildes
+                        
+                        c_tbl, c_dl = st.columns([0.8, 0.2])
+                        c_tbl.dataframe(data_tbl, use_container_width=True)
+                        c_dl.download_button(
+                            label="📥 Descargar CSV",
+                            data=csv,
+                            file_name="reporte_chatbot.csv",
+                            mime="text/csv",
+                        )
+                    else:
+                        st.info("No hay datos para mostrar con los filtros actuales.")
 
             except Exception as e: st.error(f"Error cargando datos: {str(e)}")
         elif admin_pass: st.error(t["auth_error"])
