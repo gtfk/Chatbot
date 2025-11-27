@@ -1,4 +1,4 @@
-# Versión 24.1 (FINAL: Fix Botones Chat + Excel + Base Estable)
+# Versión 25.0 (FINAL: Traducción Completa Chips + Excel + Filtros + Base Estable)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -41,7 +41,7 @@ def load_css(file_name):
 # Cargar estilos visuales
 load_css("styles.css")
 
-# --- DICCIONARIO DE TRADUCCIONES ---
+# --- DICCIONARIO DE TRADUCCIONES (ACTUALIZADO CON CHIPS) ---
 TEXTS = {
     "es": {
         "label": "Español 🇨🇱",
@@ -107,6 +107,14 @@ TEXTS = {
         "reg_btn": "Registrarse",
         "reg_success": "¡Cuenta creada! Accede desde el Login.",
         "auth_error": "Verifica tus datos.",
+        # --- NUEVAS TRADUCCIONES PARA CHIPS ---
+        "sug_header": "💡 **¿No sabes qué preguntar? Prueba con esto:**",
+        "sug_btn1": "📋 Justificar Inasistencia",
+        "sug_query1": "¿Cómo justifico una inasistencia?",
+        "sug_btn2": "🎓 Requisitos Titulación",
+        "sug_query2": "¿Cuáles son los requisitos para titularme?",
+        "sug_btn3": "📅 Fechas Exámenes",
+        "sug_query3": "¿Cuándo son los exámenes transversales?",
         "system_prompt": """
         INSTRUCCIÓN: Responde en Español formal pero cercano.
         ROL: Eres un coordinador académico de Duoc UC.
@@ -176,6 +184,14 @@ TEXTS = {
         "reg_btn": "Register",
         "reg_success": "Account created! Please login.",
         "auth_error": "Check your credentials.",
+        # --- NUEVAS TRADUCCIONES PARA CHIPS ---
+        "sug_header": "💡 **Don't know what to ask? Try this:**",
+        "sug_btn1": "📋 Justify Absence",
+        "sug_query1": "How do I justify an absence?",
+        "sug_btn2": "🎓 Graduation Reqs",
+        "sug_query2": "What are the requirements for graduation?",
+        "sug_btn3": "📅 Exam Dates",
+        "sug_query3": "When are the transversal exams?",
         "system_prompt": """
         INSTRUCTION: Respond in English, formal but friendly.
         ROLE: You are an academic coordinator at Duoc UC.
@@ -349,21 +365,22 @@ if st.session_state["authentication_status"] is True:
                                 st.session_state[reason_key] = False
                                 st.rerun()
 
-        # --- FIX: CHIPS DE SUGERENCIAS QUE GENERAN RESPUESTA INMEDIATA ---
+        # --- CHIPS TRADUCIBLES Y FUNCIONALES ---
         if not st.session_state.messages or (len(st.session_state.messages) == 1 and st.session_state.messages[0]['role'] == 'assistant'):
-            st.markdown("💡 **¿No sabes qué preguntar? Prueba con esto:**")
+            st.markdown(t["sug_header"])
             col_sug1, col_sug2, col_sug3 = st.columns(3)
             sugerencia = None
-            if col_sug1.button("📋 Justificar Inasistencia"): sugerencia = "¿Cómo justifico una inasistencia?"
-            if col_sug2.button("🎓 Requisitos Titulación"): sugerencia = "¿Cuáles son los requisitos para titularme?"
-            if col_sug3.button("📅 Fechas Exámenes"): sugerencia = "¿Cuándo son los exámenes transversales?"
+            # Botones ahora usan el diccionario 't' para el texto
+            if col_sug1.button(t["sug_btn1"]): sugerencia = t["sug_query1"]
+            if col_sug2.button(t["sug_btn2"]): sugerencia = t["sug_query2"]
+            if col_sug3.button(t["sug_btn3"]): sugerencia = t["sug_query3"]
             
             if sugerencia:
                 # 1. Guardar mensaje usuario
                 st.session_state.messages.append({"role": "user", "content": sugerencia})
                 supabase.table('chat_history').insert({'user_id': user_id, 'role': 'user', 'message': sugerencia}).execute()
 
-                # 2. Generar respuesta IA INMEDIATAMENTE antes de recargar
+                # 2. Generar respuesta IA INMEDIATAMENTE
                 with st.spinner(t["chat_thinking"]):
                     try:
                         response = retrieval_chain.invoke({"input": sugerencia, "user_name": user_name})
@@ -374,7 +391,7 @@ if st.session_state["authentication_status"] is True:
                         st.session_state.messages.append({"id": res_bot.data[0]['id'], "role": "assistant", "content": resp})
                     except Exception as e:
                         st.error(f"Error generando respuesta: {e}")
-
+                # 4. Recargar para mostrar
                 st.rerun()
 
         if prompt := st.chat_input(t["chat_placeholder"]):
