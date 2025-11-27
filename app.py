@@ -1,4 +1,4 @@
-# Versión 24.0 (FINAL: Chips Chat + Export Excel + Base Estable v23)
+# Versión 24.1 (FINAL: Fix Botones Chat + Excel + Base Estable)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -16,7 +16,7 @@ import streamlit_authenticator as stauth
 import time
 from datetime import time as dt_time
 import bcrypt
-import pandas as pd  # <--- NUEVO: Para exportar a Excel
+import pandas as pd
 
 # --- URLs DE LOGOS ---
 LOGO_BANNER_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/a/aa/Logo_DuocUC.svg/2560px-Logo_DuocUC.svg.png"
@@ -349,9 +349,8 @@ if st.session_state["authentication_status"] is True:
                                 st.session_state[reason_key] = False
                                 st.rerun()
 
-        # --- 1. NUEVO: CHIPS DE SUGERENCIAS (TAB 1) ---
+        # --- FIX: CHIPS DE SUGERENCIAS QUE GENERAN RESPUESTA INMEDIATA ---
         if not st.session_state.messages or (len(st.session_state.messages) == 1 and st.session_state.messages[0]['role'] == 'assistant'):
-            # Solo mostrar si el chat está "vacío" (solo mensaje de bienvenida)
             st.markdown("💡 **¿No sabes qué preguntar? Prueba con esto:**")
             col_sug1, col_sug2, col_sug3 = st.columns(3)
             sugerencia = None
@@ -360,8 +359,22 @@ if st.session_state["authentication_status"] is True:
             if col_sug3.button("📅 Fechas Exámenes"): sugerencia = "¿Cuándo son los exámenes transversales?"
             
             if sugerencia:
+                # 1. Guardar mensaje usuario
                 st.session_state.messages.append({"role": "user", "content": sugerencia})
                 supabase.table('chat_history').insert({'user_id': user_id, 'role': 'user', 'message': sugerencia}).execute()
+
+                # 2. Generar respuesta IA INMEDIATAMENTE antes de recargar
+                with st.spinner(t["chat_thinking"]):
+                    try:
+                        response = retrieval_chain.invoke({"input": sugerencia, "user_name": user_name})
+                        resp = response["answer"]
+                        
+                        # 3. Guardar respuesta IA
+                        res_bot = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': resp}).execute()
+                        st.session_state.messages.append({"id": res_bot.data[0]['id'], "role": "assistant", "content": resp})
+                    except Exception as e:
+                        st.error(f"Error generando respuesta: {e}")
+
                 st.rerun()
 
         if prompt := st.chat_input(t["chat_placeholder"]):
@@ -570,13 +583,11 @@ if st.session_state["authentication_status"] is True:
                         pbar.progress((i+1)/len(response.data))
                     pbar.empty()
                     
-                    # --- 2. NUEVO: EXPORTAR A EXCEL (TAB 3) ---
                     st.markdown(f"### 📝 Registro Detallado ({len(data_tbl)} filas)")
                     
-                    # Convertir a DataFrame y botón de descarga
                     if data_tbl:
                         df_download = pd.DataFrame(data_tbl)
-                        csv = df_download.to_csv(index=False).encode('utf-8-sig') # utf-8-sig para que Excel lea tildes
+                        csv = df_download.to_csv(index=False).encode('utf-8-sig')
                         
                         c_tbl, c_dl = st.columns([0.8, 0.2])
                         c_tbl.dataframe(data_tbl, use_container_width=True)
