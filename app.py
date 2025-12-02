@@ -1,4 +1,4 @@
-# Versión 25.0 (FINAL: Traducción Completa Chips + Excel + Filtros + Base Estable)
+# Versión 25.1 (CORREGIDA: Fix KeyError 'id' + Traducción Completa + Excel + Filtros)
 import streamlit as st
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
@@ -36,12 +36,17 @@ def load_css(file_name):
         with open(file_name) as f:
             st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
     except FileNotFoundError:
-        st.error(f"⚠️ No se encontró el archivo {file_name}. Asegúrate de que esté en la misma carpeta que app.py.")
+        # Fallback si no hay styles.css
+        st.markdown("""
+        <style>
+        .stChatInput {position: fixed; bottom: 30px; z-index: 1000;}
+        </style>
+        """, unsafe_allow_html=True)
 
 # Cargar estilos visuales
 load_css("styles.css")
 
-# --- DICCIONARIO DE TRADUCCIONES (ACTUALIZADO CON CHIPS) ---
+# --- DICCIONARIO DE TRADUCCIONES ---
 TEXTS = {
     "es": {
         "label": "Español 🇨🇱",
@@ -107,7 +112,6 @@ TEXTS = {
         "reg_btn": "Registrarse",
         "reg_success": "¡Cuenta creada! Accede desde el Login.",
         "auth_error": "Verifica tus datos.",
-        # --- NUEVAS TRADUCCIONES PARA CHIPS ---
         "sug_header": "💡 **¿No sabes qué preguntar? Prueba con esto:**",
         "sug_btn1": "📋 Justificar Inasistencia",
         "sug_query1": "¿Cómo justifico una inasistencia?",
@@ -184,7 +188,6 @@ TEXTS = {
         "reg_btn": "Register",
         "reg_success": "Account created! Please login.",
         "auth_error": "Check your credentials.",
-        # --- NUEVAS TRADUCCIONES PARA CHIPS ---
         "sug_header": "💡 **Don't know what to ask? Try this:**",
         "sug_btn1": "📋 Justify Absence",
         "sug_query1": "How do I justify an absence?",
@@ -206,7 +209,7 @@ SUPABASE_KEY = st.secrets.get("SUPABASE_KEY")
 ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD", "DUOC2025")
 
 if not GROQ_API_KEY or not SUPABASE_URL or not SUPABASE_KEY:
-    st.error("Error: Faltan claves de API.")
+    st.error("Error: Faltan claves de API en .streamlit/secrets.toml")
     st.stop()
 
 # --- SUPABASE ---
@@ -225,36 +228,40 @@ def stream_data(text):
 # --- CHATBOT ENGINE ---
 @st.cache_resource
 def inicializar_cadena(language_code):
-    loader = PyPDFLoader("reglamento.pdf")
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
-    docs = loader.load_and_split(text_splitter=text_splitter)
-    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-    vector_store = Chroma.from_documents(docs, embeddings)
-    vector_retriever = vector_store.as_retriever(search_kwargs={"k": 7})
-    bm25_retriever = BM25Retriever.from_documents(docs)
-    bm25_retriever.k = 7
-    retriever = EnsembleRetriever(retrievers=[bm25_retriever, vector_retriever], weights=[0.7, 0.3])
-    llm = ChatGroq(api_key=GROQ_API_KEY, model="llama-3.1-8b-instant", temperature=0.1)
-    
-    base_instruction = TEXTS[language_code]["system_prompt"]
-    
-    prompt_template = base_instruction + """
-    RULES:
-    1. Address {user_name} by name.
-    2. Be clear and concise.
-    3. Base answer ONLY on context.
-    4. Cite the article (e.g. "Article N°30").
+    try:
+        loader = PyPDFLoader("reglamento.pdf")
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
+        docs = loader.load_and_split(text_splitter=text_splitter)
+        embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        vector_store = Chroma.from_documents(docs, embeddings)
+        vector_retriever = vector_store.as_retriever(search_kwargs={"k": 7})
+        bm25_retriever = BM25Retriever.from_documents(docs)
+        bm25_retriever.k = 7
+        retriever = EnsembleRetriever(retrievers=[bm25_retriever, vector_retriever], weights=[0.7, 0.3])
+        llm = ChatGroq(api_key=GROQ_API_KEY, model="llama-3.1-8b-instant", temperature=0.1)
+        
+        base_instruction = TEXTS[language_code]["system_prompt"]
+        
+        prompt_template = base_instruction + """
+        RULES:
+        1. Address {user_name} by name.
+        2. Be clear and concise.
+        3. Base answer ONLY on context.
+        4. Cite the article (e.g. "Article N°30").
 
-    CONTEXT:
-    {context}
-    QUESTION FROM {user_name}:
-    {input}
-    ANSWER:
-    """
-    prompt = ChatPromptTemplate.from_template(prompt_template)
-    document_chain = create_stuff_documents_chain(llm, prompt)
-    retrieval_chain = create_retrieval_chain(retriever, document_chain)
-    return retrieval_chain
+        CONTEXT:
+        {context}
+        QUESTION FROM {user_name}:
+        {input}
+        ANSWER:
+        """
+        prompt = ChatPromptTemplate.from_template(prompt_template)
+        document_chain = create_stuff_documents_chain(llm, prompt)
+        retrieval_chain = create_retrieval_chain(retriever, document_chain)
+        return retrieval_chain
+    except Exception as e:
+        st.error(f"Error inicializando el motor IA: {e}")
+        return None
 
 # --- FETCH USERS ---
 def fetch_all_users():
@@ -341,16 +348,23 @@ if st.session_state["authentication_status"] is True:
                 if res.data:
                     st.session_state.messages.append({"id": res.data[0]['id'], "role": "assistant", "content": welcome_msg})
 
+        # --- BUCLE DE MENSAJES CON FIX DE SEGURIDAD ---
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
-                if msg["role"] == "assistant" and msg["id"]:
+                
+                # CORRECCIÓN: Usamos msg.get("id") en lugar de msg["id"] para evitar KeyError
+                if msg["role"] == "assistant" and msg.get("id"):
+                    
                     col_fb1, col_fb2, _ = st.columns([1,1,8])
+                    # Dentro del if, es seguro usar msg['id']
                     if col_fb1.button("👍", key=f"up_{msg['id']}"):
                         supabase.table('feedback').insert({"message_id": msg['id'], "user_id": user_id, "rating": "good"}).execute()
                         st.toast(t["feedback_thanks"])
+                    
                     reason_key = f"show_reason_{msg['id']}"
                     if col_fb2.button("👎", key=f"down_{msg['id']}"): st.session_state[reason_key] = True
+                    
                     if st.session_state.get(reason_key, False):
                         with st.form(key=f"form_{msg['id']}", enter_to_submit=False):
                             st.write(t["feedback_modal_title"])
@@ -370,7 +384,7 @@ if st.session_state["authentication_status"] is True:
             st.markdown(t["sug_header"])
             col_sug1, col_sug2, col_sug3 = st.columns(3)
             sugerencia = None
-            # Botones ahora usan el diccionario 't' para el texto
+            
             if col_sug1.button(t["sug_btn1"]): sugerencia = t["sug_query1"]
             if col_sug2.button(t["sug_btn2"]): sugerencia = t["sug_query2"]
             if col_sug3.button(t["sug_btn3"]): sugerencia = t["sug_query3"]
@@ -380,7 +394,7 @@ if st.session_state["authentication_status"] is True:
                 st.session_state.messages.append({"role": "user", "content": sugerencia})
                 supabase.table('chat_history').insert({'user_id': user_id, 'role': 'user', 'message': sugerencia}).execute()
 
-                # 2. Generar respuesta IA INMEDIATAMENTE
+                # 2. Generar respuesta IA
                 with st.spinner(t["chat_thinking"]):
                     try:
                         response = retrieval_chain.invoke({"input": sugerencia, "user_name": user_name})
@@ -388,23 +402,39 @@ if st.session_state["authentication_status"] is True:
                         
                         # 3. Guardar respuesta IA
                         res_bot = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': resp}).execute()
-                        st.session_state.messages.append({"id": res_bot.data[0]['id'], "role": "assistant", "content": resp})
+                        
+                        # Añadir al historial local asegurando que tiene ID
+                        msg_data = {"role": "assistant", "content": resp}
+                        if res_bot.data:
+                            msg_data["id"] = res_bot.data[0]['id']
+                        st.session_state.messages.append(msg_data)
+                        
                     except Exception as e:
                         st.error(f"Error generando respuesta: {e}")
-                # 4. Recargar para mostrar
+                
                 st.rerun()
 
         if prompt := st.chat_input(t["chat_placeholder"]):
             st.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"): st.markdown(prompt)
             supabase.table('chat_history').insert({'user_id': user_id, 'role': 'user', 'message': prompt}).execute()
+            
             with st.chat_message("assistant"):
                 with st.spinner(t["chat_thinking"]):
-                    response = retrieval_chain.invoke({"input": prompt, "user_name": user_name})
-                    resp = response["answer"]
-                st.write_stream(stream_data(resp))
-            res_bot = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': resp}).execute()
-            st.session_state.messages.append({"id": res_bot.data[0]['id'], "role": "assistant", "content": resp})
+                    try:
+                        response = retrieval_chain.invoke({"input": prompt, "user_name": user_name})
+                        resp = response["answer"]
+                        st.write_stream(stream_data(resp))
+                        
+                        res_bot = supabase.table('chat_history').insert({'user_id': user_id, 'role': 'assistant', 'message': resp}).execute()
+                        
+                        msg_data = {"role": "assistant", "content": resp}
+                        if res_bot.data:
+                            msg_data["id"] = res_bot.data[0]['id']
+                        st.session_state.messages.append(msg_data)
+                        
+                    except Exception as e:
+                        st.error(f"Error: {e}")
 
     # --- TAB 2: INSCRIPCIÓN ---
     with tab2:
@@ -433,13 +463,12 @@ if st.session_state["authentication_status"] is True:
         if not subjects_data: 
             st.warning("No data.")
         else:
-            # 1. Inicializar variables de estado
             if "selected_career" not in st.session_state:
                 st.session_state.selected_career = t["filter_all"]
             if "selected_semester" not in st.session_state:
                 st.session_state.selected_semester = t["filter_all_m"]
 
-            # 2. Lógica de Filtrado Cruzado
+            # Filtro Cruzado
             temp_data_car = subjects_data
             if st.session_state.selected_semester != t["filter_all_m"]:
                 try:
@@ -462,7 +491,6 @@ if st.session_state["authentication_status"] is True:
             if st.session_state.selected_semester not in semester_opts:
                 st.session_state.selected_semester = t["filter_all_m"]
 
-            # 3. Renderizar Selectbox con Keys
             c_f1, c_f2, c_res = st.columns([2, 2, 1])
             with c_f1:
                 st.selectbox(t["filter_career"], career_opts, key="selected_career")
