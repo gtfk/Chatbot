@@ -1,106 +1,122 @@
 import streamlit as st
-import time
+import pandas as pd
+import random
+from datetime import datetime, timedelta
 
-# --- CONFIGURACIÓN VISUAL ---
-# Establecemos un título y layout, e inyectamos CSS básico para simular
-# la estética que estás usando en la versión final.
-st.set_page_config(page_title="Asistente Duoc UC v0.15 Beta", layout="wide", page_icon="🎓")
-LOGO_ICON_URL = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSlve2kMlU53cq9Tl0DMxP0Ffo0JNap2dXq4q_uSdf4PyFZ9uraw7MU5irI6mA-HG8byNI&usqp=CAU"
+# --- CONFIGURACIÓN DE PÁGINA ---
+st.set_page_config(page_title="Duoc UC Bot v0.8 (Admin)", layout="wide", page_icon="🔐")
 
+# --- ESTILOS SIMULADOS ---
 st.markdown("""
     <style>
-    /* Estilos CSS básicos embebidos para el prototipo */
-    .main-header {font-size: 2rem; color: #003366; font-weight: 700;}
-    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
-    .stTabs [data-baseweb="tab"] { border-radius: 5px; background-color: #f0f2f6; padding: 10px 20px; }
-    .stTabs [aria-selected="true"] { background-color: #003366 !important; color: white !important; }
+    .main-header {font-size: 1.8rem; color: #003366; font-weight: bold;}
+    .metric-card {background-color: #f9f9f9; padding: 15px; border-radius: 8px; border: 1px solid #ddd;}
     </style>
 """, unsafe_allow_html=True)
 
-# --- SIDEBAR SIMULADO (Login visual) ---
+# --- DATOS MOCK (FALSOS) PARA EL PANEL ADMIN ---
+def get_mock_logs():
+    # Generamos datos que parezcan reales para la tabla
+    data = []
+    actions = ["Login", "Consulta Reglamento", "Intento Fallido", "Inscripción", "Feedback Negativo"]
+    users = ["j.perez@duocuc.cl", "m.gonzalez@duocuc.cl", "admin@duoc.cl", "a.rojas@duocuc.cl"]
+    
+    for i in range(10):
+        t = datetime.now() - timedelta(minutes=random.randint(1, 300))
+        data.append({
+            "Timestamp": t.strftime("%Y-%m-%d %H:%M"),
+            "Usuario": random.choice(users),
+            "Acción": random.choice(actions),
+            "Latencia (ms)": random.randint(50, 1200),
+            "Estado": random.choice(["✅ OK", "✅ OK", "⚠️ Alerta"])
+        })
+    return pd.DataFrame(data)
+
+# --- SIDEBAR: SIMULACIÓN DE REGISTRO Y LOGIN ---
 with st.sidebar:
-    # Usamos el icono como logo simple para esta versión
-    st.image(LOGO_ICON_URL, width=80)
-    st.markdown("### Asistente Académico")
-    st.caption("Versión Beta v0.15")
+    st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/a/aa/Logo_DuocUC.svg/2560px-Logo_DuocUC.svg.png", width=150)
+    st.caption("v0.8.1 - Módulo Administrativo")
+    
+    # Selector para la demo (Para que puedas sacar pantallazos de ambos estados)
+    app_mode = st.radio("Modo de Vista (Para Screenshot)", ["Vista: Registro (Logout)", "Vista: Admin (Login)"])
+
     st.divider()
-    # Simulamos que un usuario ya ingresó
-    st.info("👤 Usuario: alumno.demo@duocuc.cl")
-    st.button("Cerrar Sesión (Simulado)")
 
-# --- HEADER PRINCIPAL ---
-col_h1, col_h2 = st.columns([0.1, 0.9])
-with col_h1: st.image(LOGO_ICON_URL, width=60)
-with col_h2: st.markdown("<div class='main-header'>Asistente Virtual Duoc UC</div>", unsafe_allow_html=True)
+    if app_mode == "Vista: Registro (Logout)":
+        st.subheader("🔐 Acceso Estudiantes")
+        tab_login, tab_reg = st.tabs(["Ingresar", "Registrarse"])
+        
+        with tab_login:
+            st.text_input("Correo Institucional")
+            st.text_input("Contraseña", type="password")
+            st.button("Entrar", type="primary")
+            
+        with tab_reg:
+            st.markdown("**Crear Cuenta Nueva**")
+            st.text_input("Nombre Completo")
+            st.text_input("Nuevo Correo Duoc")
+            st.text_input("Crear Clave", type="password")
+            st.text_input("Confirmar Clave", type="password")
+            st.button("Registrar Usuario")
+            st.success("☝️ ¡Captura este formulario para mostrar el registro!")
 
-# --- ESTRUCTURA PRINCIPAL: PESTAÑAS ---
-# Aquí se nota la gran diferencia con la v1.0
-tab1, tab2 = st.tabs(["💬 Chat Reglamento", "📅 Toma de Ramos (Prototipo)"])
+    else: # MODO ADMIN LOGUEADO
+        st.info("👤 **Admin Conectado:**\ncoordinador@duoc.cl")
+        st.button("Cerrar Sesión")
+        st.divider()
+        st.markdown("### 🛠 Herramientas Dev")
+        st.checkbox("Modo Debug", value=True)
+        st.checkbox("Mostrar JSON Raw")
 
-# --- TAB 1: CHATBOT (Simplificado, sin feedback ni chips) ---
+# --- ÁREA PRINCIPAL ---
+col1, col2 = st.columns([0.1, 0.9])
+with col1: st.write("🤖")
+with col2: st.markdown("<div class='main-header'>Plataforma de Asistencia Académica</div>", unsafe_allow_html=True)
+
+# PESTAÑAS
+tab1, tab2, tab3 = st.tabs(["💬 Chatbot", "📅 Inscripción", "🛡️ Panel Admin"])
+
 with tab1:
-    st.subheader("Consulta al Reglamento")
-    st.caption("Haz preguntas sobre asistencia, notas o procesos académicos.")
+    st.info("El chat está desactivado en esta vista administrativa.")
 
-    # Historial de sesión volátil (sin base de datos real)
-    if "messages_v15" not in st.session_state:
-        st.session_state.messages_v15 = [
-            {"role": "assistant", "content": "¡Hola! Soy la versión beta del asistente. ¿Cuál es tu duda sobre el reglamento?"}
-        ]
-
-    # Mostrar historial
-    for msg in st.session_state.messages_v15:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
-
-    # Input del usuario
-    if prompt := st.chat_input("Ej: ¿Cuánta asistencia necesito para aprobar?"):
-        # 1. Mostrar mensaje usuario
-        st.session_state.messages_v15.append({"role": "user", "content": prompt})
-        with st.chat_message("user"): st.markdown(prompt)
-
-        # 2. Respuesta SIMULADA (para no depender de API keys en el screenshot)
-        with st.chat_message("assistant"):
-            with st.spinner("Consultando reglamento (simulación)..."):
-                time.sleep(1.5) # Simular tiempo de espera
-                # Respuesta genérica para la foto
-                fake_response = """Basado en el Artículo 32 del reglamento académico (versión preliminar), la asistencia mínima requerida es del **75%** para asignaturas presenciales. 
-                
-*Nota: Esta es una respuesta simulada para la versión de prueba.*"""
-                st.markdown(fake_response)
-        st.session_state.messages_v15.append({"role": "assistant", "content": fake_response})
-
-# --- TAB 2: TOMA DE RAMOS (Mockup Visual) ---
 with tab2:
-    st.subheader("Prototipo de Inscripción 2025")
-    st.warning("🚧 Esta sección es un prototipo visual. Los datos no son reales y no conecta a base de datos.")
+    st.info("El módulo de inscripción está oculto para administradores.")
 
-    # Filtros visuales (sin lógica real detrás)
-    c_filt1, c_filt2, c_btn = st.columns([2, 2, 1])
-    c_filt1.selectbox("📂 Carrera", ["Ingeniería en Informática", "Diseño Gráfico"], index=0)
-    c_filt2.selectbox("⏳ Semestre", ["Semestre 1", "Semestre 3"], index=0)
-    c_btn.write("")
-    c_btn.write("")
-    c_btn.button("Filtrar (Demo)")
+# --- AQUÍ ESTÁ LO IMPORTANTE PARA TU SCREENSHOT ---
+with tab3:
+    if app_mode == "Vista: Registro (Logout)":
+        st.error("⛔ Acceso Denegado: Debes iniciar sesión como Administrador para ver este panel.")
+        st.image("https://cdn-icons-png.flaticon.com/512/675/675564.png", width=100)
+    else:
+        st.markdown("### 📊 Dashboard de Control y Auditoría")
+        st.markdown("Monitoreo en tiempo real de interacciones y registros de usuarios.")
+        
+        # 1. MÉTRICAS (KPIs)
+        kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+        kpi1.metric(label="Usuarios Registrados", value="1,245", delta="12 hoy")
+        kpi2.metric(label="Interacciones Chat", value="8,430", delta="15%")
+        kpi3.metric(label="Tasa de Error", value="2.1%", delta="-0.5%", delta_color="inverse")
+        kpi4.metric(label="Feedback Positivo", value="4.8/5.0")
+        
+        st.divider()
+        
+        # 2. TABLA DE LOGS (Con estilo dataframe)
+        c_table, c_details = st.columns([2, 1])
+        
+        with c_table:
+            st.subheader("📋 Últimos Logs del Sistema")
+            df_logs = get_mock_logs()
+            st.dataframe(df_logs, use_container_width=True, hide_index=True)
+        
+        with c_details:
+            st.subheader("⚙️ Configuración Global")
+            with st.container(border=True):
+                st.toggle("Mantenimiento Programado", value=False)
+                st.toggle("Restringir Accesos Externos", value=True)
+                st.select_slider("Límite de Tokens (IA)", options=[1000, 2000, 4000, 8000], value=4000)
+                st.button("🔄 Purgar Caché", help="Limpia la memoria temporal")
+                
+            st.warning("⚠️ **Alerta:** Se detectó un alto volumen de consultas sobre 'Exámenes Transversales' en la última hora.")
 
-    st.divider()
-    st.markdown("##### Asignaturas Disponibles (Datos de Ejemplo)")
-
-    # Ejemplos "hardcoded" para que se vea cómo será la interfaz
-    with st.container(border=True):
-        c1, c2, c3, c4 = st.columns([3, 2, 2, 2])
-        c1.markdown("**📘 Programación de Algoritmos (PGY1121)**\nSec. 001D - Lunes 08:30")
-        c2.write("Prof. Juan Pérez")
-        c3.write("Cupos: **5** / 30")
-        c4.button("Inscribir", key="btn_mock_1", type="primary")
-
-    with st.container(border=True):
-        c1, c2, c3, c4 = st.columns([3, 2, 2, 2])
-        c1.markdown("**📙 Base de Datos (BDD2130)**\nSec. 004N - Miércoles 19:00")
-        c2.write("Prof. María López")
-        c3.write("Cupos: **0** / 25")
-        c4.button("Sin Cupos", key="btn_mock_2", disabled=True)
-
-    st.divider()
-    st.subheader("Tu Carga Académica")
-    st.info("No tienes ramos inscritos en esta simulación.")
+        # 3. BOTÓN DE DESCARGA
+        st.download_button("📥 Descargar Reporte Completo (.csv)", data="mock_data", file_name="reporte_admin.csv")
